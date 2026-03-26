@@ -1,4 +1,5 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 
 const PORT = Number(process.env.PORT || 8787);
 const REQUEST_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS || 20000);
@@ -24,11 +25,76 @@ const API_ERRORS = {
   NOT_FOUND: 'not_found'
 };
 
-const sendJson = (res, statusCode, body) => {
-  res.writeHead(statusCode, {
+const sendJson = (res, statusCode, body, { requestId } = {}) => {
+  const headers = {
     'Content-Type': 'application/json; charset=utf-8'
+  };
+  if (requestId) {
+    headers['X-Request-Id'] = requestId;
+  }
+
+  res.writeHead(statusCode, {
+    ...headers
   });
   res.end(JSON.stringify(body));
+};
+
+const getOrCreateRequestId = (req) => {
+  const incoming = String(req.headers['x-request-id'] || '').trim();
+  if (incoming) {
+    return incoming;
+  }
+
+  if (typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  return `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const safePayloadMetadata = (payload = {}) => {
+  const datos = payload?.datos;
+  const puntaje = payload?.puntaje;
+
+  return {
+    hasDatos: Boolean(datos && typeof datos === 'object'),
+    datosKeys: datos && typeof datos === 'object' ? Object.keys(datos).sort() : [],
+    puntajeType: typeof puntaje,
+    hasPuntaje: puntaje !== undefined,
+    payloadSizeBytes: Buffer.byteLength(JSON.stringify(payload || {}), 'utf8')
+  };
+};
+
+const logEvent = ({ requestId, event, method, path, status, durationMs, provider, model, errorCode, payloadMetadata }) => {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    level: errorCode ? 'error' : 'info',
+    event,
+    requestId,
+    method,
+    path
+  };
+
+  if (status !== undefined) {
+    entry.status = status;
+  }
+  if (durationMs !== undefined) {
+    entry.durationMs = durationMs;
+  }
+  if (provider) {
+    entry.provider = provider;
+  }
+  if (model) {
+    entry.model = model;
+  }
+  if (errorCode) {
+    entry.errorCode = errorCode;
+  }
+  if (payloadMetadata) {
+    entry.payloadMetadata = payloadMetadata;
+  }
+
+  process.stdout.write(`${JSON.stringify(entry)}\n`);
 };
 
 const parseBody = (req) => new Promise((resolve, reject) => {
@@ -336,11 +402,30 @@ const validarPayload = (payload) => {
 };
 
 const handler = async (req, res) => {
+  const requestId = getOrCreateRequestId(req);
+  const startedAt = Date.now();
+  const requestPath = req.url || '/';
+
+  logEvent({
+    requestId,
+    event: 'request_started',
+    method: req.method,
+    path: requestPath
+  });
+
   if (req.method === 'GET' && req.url === '/api/calificacion/proveedor') {
     sendJson(res, 200, {
       proveedor: activeProvider.name,
       modelo: activeProvider.model,
       timeoutMs: REQUEST_TIMEOUT_MS
+    }, { requestId });
+    logEvent({
+      requestId,
+      event: 'request_completed',
+      method: req.method,
+      path: requestPath,
+      status: 200,
+      durationMs: Date.now() - startedAt
     });
     return;
   }
@@ -350,16 +435,45 @@ const handler = async (req, res) => {
       assertInternalToken(req);
       assertRateLimit(req);
       const payload = await parseBody(req);
+      logEvent({
+        requestId,
+        event: 'provider_selected',
+        method: req.method,
+        path: requestPath,
+        provider: activeProvider.name,
+        model: activeProvider.model,
+        payloadMetadata: safePayloadMetadata(payload)
+      });
       const { datos, puntaje } = validarPayload(payload);
       const sugerencia = await activeProvider.suggestGrade({ datos, puntaje });
-      sendJson(res, 200, sugerencia);
+      sendJson(res, 200, sugerencia, { requestId });
+      logEvent({
+        requestId,
+        event: 'request_completed',
+        method: req.method,
+        path: requestPath,
+        status: 200,
+        durationMs: Date.now() - startedAt,
+        provider: activeProvider.name,
+        model: activeProvider.model
+      });
     } catch (error) {
       if (error instanceof ApiError) {
         sendJson(res, error.status || 400, {
           error: {
             message: error.message,
-            code: error.code
+            code: error.code,
+            requestId
           }
+        }, { requestId });
+        logEvent({
+          requestId,
+          event: 'request_completed',
+          method: req.method,
+          path: requestPath,
+          status: error.status || 400,
+          durationMs: Date.now() - startedAt,
+          errorCode: error.code
         });
         return;
       }
@@ -369,8 +483,20 @@ const handler = async (req, res) => {
           error: {
             message: error.message,
             code: error.code,
-            provider: activeProvider.name
+            provider: activeProvider.name,
+            requestId
           }
+        }, { requestId });
+        logEvent({
+          requestId,
+          event: 'request_completed',
+          method: req.method,
+          path: requestPath,
+          status: error.status || 500,
+          durationMs: Date.now() - startedAt,
+          provider: activeProvider.name,
+          model: activeProvider.model,
+          errorCode: error.code
         });
         return;
       }
@@ -378,8 +504,18 @@ const handler = async (req, res) => {
       sendJson(res, 400, {
         error: {
           message: error?.message || 'No se pudo procesar la solicitud.',
-          code: API_ERRORS.BAD_REQUEST
+          code: API_ERRORS.BAD_REQUEST,
+          requestId
         }
+      }, { requestId });
+      logEvent({
+        requestId,
+        event: 'request_completed',
+        method: req.method,
+        path: requestPath,
+        status: 400,
+        durationMs: Date.now() - startedAt,
+        errorCode: API_ERRORS.BAD_REQUEST
       });
     }
 
@@ -389,8 +525,18 @@ const handler = async (req, res) => {
   sendJson(res, 404, {
     error: {
       message: 'Ruta no encontrada.',
-      code: API_ERRORS.NOT_FOUND
+      code: API_ERRORS.NOT_FOUND,
+      requestId
     }
+  }, { requestId });
+  logEvent({
+    requestId,
+    event: 'request_completed',
+    method: req.method,
+    path: requestPath,
+    status: 404,
+    durationMs: Date.now() - startedAt,
+    errorCode: API_ERRORS.NOT_FOUND
   });
 };
 

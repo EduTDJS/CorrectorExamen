@@ -41,6 +41,7 @@ La aplicación usa un modelo **server-side** donde los secretos de proveedores (
 - Administrar `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` vía secret manager (no en repositorio).
 - Rotar credenciales periódicamente y ante cualquier sospecha de fuga.
 - Registrar métricas de latencia/errores de `/api/calificacion/sugerir`.
+- Estandarizar y centralizar logs JSON con `requestId`; ver `docs/observability.md`.
 - Aplicar políticas de red (egress control) para limitar destinos salientes.
 - Mantener `AI_REQUEST_TIMEOUT_MS` ajustado (default 20s) para evitar cuelgues y consumo excesivo.
 - Validar payloads en backend (`datos` objeto y `puntaje` numérico) antes de consumir proveedor.
