@@ -72,7 +72,7 @@ Toda PR debe incluir:
 1. **Descripción funcional** del cambio (qué problema resuelve y cómo).
 2. **Alcance técnico** (archivos/módulos impactados).
 3. **Pruebas ejecutadas**:
-   - Al menos `npm run build`.
+   - Al menos `npm run lint`, `npm run test` y `npm run build`.
    - Si aplica, validación manual del flujo afectado en `npm run dev`.
 4. **Documentación actualizada** cuando corresponda.
 
@@ -84,4 +84,34 @@ Marca estos ítems antes de solicitar revisión:
 - [ ] No se mezclan cambios no relacionados en la misma PR.
 - [ ] Se actualizó documentación técnica si cambió la arquitectura o decisiones.
 - [ ] **Si cambia comportamiento, actualizar README + docs/.**
+
+
+
+## Lint y pruebas (local/CI)
+
+### Ejecución local recomendada
+
+```bash
+npm install
+npm run lint
+npm run test
+npm run build
+```
+
+Para desarrollo guiado por pruebas:
+
+```bash
+npm run test:watch
+```
+
+### Ejecución en CI
+
+Configura el workflow para ejecutar:
+
+```bash
+npm ci
+npm run lint
+npm run test
+npm run build
+```
 

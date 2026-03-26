@@ -24,6 +24,29 @@ Consulta la guía de contribución en [CONTRIBUTING.md](CONTRIBUTING.md) para ra
 - `npm run dev` ejecuta la aplicación en desarrollo.
 - `npm run build` construye la versión de producción.
 - `npm run preview` previsualiza el build.
+- `npm run lint` valida reglas de ESLint para React + Vite.
+- `npm run test` ejecuta la suite de pruebas con Vitest en modo CI.
+- `npm run test:watch` ejecuta pruebas en modo observación local.
+- `npm run format` aplica formateo con Prettier.
+
+
+## Calidad local y CI
+
+Flujo recomendado antes de abrir PR:
+
+1. `npm install`
+2. `npm run lint`
+3. `npm run test`
+4. `npm run build`
+
+En CI se debe ejecutar al menos este pipeline:
+
+```bash
+npm ci
+npm run lint
+npm run test
+npm run build
+```
 
 ## Mapa de módulos (refactor)
 
