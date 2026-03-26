@@ -15,7 +15,8 @@ import {
   convertirTextoALista,
   letrasValidas,
   limpiarRespuestas,
-  mapearLetraPucmm
+  mapearLetraPucmm,
+  obtenerRespuestaTexto
 } from './utils/examUtils';
 
 const pasos = [
@@ -24,6 +25,8 @@ const pasos = [
   'Revisión de calificaciones',
   'Reporte final y exportación'
 ];
+
+const UMBRAL_BAJA_CONFIANZA = 65;
 
 const formularioInicial = {
   materia: '',
@@ -61,7 +64,8 @@ function App() {
     return 100 / total;
   }, [datos.totalPreguntas]);
 
-  const respuestasLimpias = useMemo(() => limpiarRespuestas(respuestasLista.join('')), [respuestasLista]);
+  const respuestasTextoLista = useMemo(() => respuestasLista.map((item) => obtenerRespuestaTexto(item) || ''), [respuestasLista]);
+  const respuestasLimpias = useMemo(() => limpiarRespuestas(respuestasLista), [respuestasLista]);
 
   const claveLimpia = useMemo(() => limpiarRespuestas(datos.claveRespuestas), [datos.claveRespuestas]);
 
@@ -69,7 +73,8 @@ function App() {
     const total = totalPreguntasNumero > 0 ? totalPreguntasNumero : Math.max(claveLimpia.length, respuestasLimpias.length);
     return Array.from({ length: total }, (_, indice) => {
       const correcta = claveLimpia[indice] || '';
-      const estudiante = respuestasLista[indice] || '';
+      const respuestaData = respuestasLista[indice] || {};
+      const estudiante = obtenerRespuestaTexto(respuestaData);
       const esCorrecta = Boolean(correcta && estudiante && correcta === estudiante);
       const puntaje = esCorrecta ? puntosPorPregunta : 0;
 
@@ -81,7 +86,10 @@ function App() {
         puntaje,
         justificacionIA: esCorrecta
           ? 'Coincide con la clave oficial; mantiene el criterio contable esperado.'
-          : 'No coincide con la clave oficial; requiere reforzar procedimiento y conceptos.'
+          : 'No coincide con la clave oficial; requiere reforzar procedimiento y conceptos.',
+        confianzaOCR: typeof respuestaData.confianza === 'number' ? respuestaData.confianza : null,
+        fuenteOCR: respuestaData.fuenteLinea || '',
+        bajaConfianza: typeof respuestaData.confianza === 'number' && respuestaData.confianza < UMBRAL_BAJA_CONFIANZA
       };
     });
   }, [totalPreguntasNumero, claveLimpia, respuestasLista, respuestasLimpias.length, puntosPorPregunta]);
@@ -111,8 +119,13 @@ function App() {
   const actualizarRespuesta = (indice, valor) => {
     setRespuestasLista((previo) => {
       const longitud = totalPreguntasNumero > 0 ? totalPreguntasNumero : Math.max(previo.length, indice + 1);
-      const copia = Array.from({ length: longitud }, (_, i) => previo[i] || '');
-      copia[indice] = valor;
+      const copia = Array.from({ length: longitud }, (_, i) => previo[i] || convertirTextoALista('', 1)[0]);
+      copia[indice] = {
+        ...copia[indice],
+        respuesta: valor,
+        confianza: null,
+        fuenteLinea: 'Ajuste manual'
+      };
       return copia;
     });
   };
@@ -205,7 +218,7 @@ function App() {
     if (tipo === 'csv') exportarIndividualCSV(reporte);
   };
 
-  const textoManual = respuestasLista.join('');
+  const textoManual = respuestasTextoLista.join('');
   const totalFilasTabla = totalPreguntasNumero > 0 ? totalPreguntasNumero : Math.max(respuestasLista.length, 1);
 
   return (
@@ -247,6 +260,7 @@ function App() {
             respuestasLista={respuestasLista}
             actualizarRespuesta={actualizarRespuesta}
             letrasValidas={letrasValidas}
+            umbralBajaConfianza={UMBRAL_BAJA_CONFIANZA}
           />
         )}
         {pasoActual === 2 && (

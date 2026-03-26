@@ -166,3 +166,11 @@ button[disabled] {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 0.75rem;
 }
+
+.fila-baja-confianza {
+  background: #fffbeb;
+}
+
+.fila-baja-confianza td {
+  border-left: 3px solid #f59e0b;
+}

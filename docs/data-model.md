@@ -29,12 +29,19 @@ Este documento describe los esquemas lógicos usados para construir y persistir 
 
 ```json
 {
-  "lista": ["A", "B", "", "D"],
-  "texto": "ABD"
+  "lista": [
+    { "respuesta": "A", "confianza": 92.5, "fuenteLinea": "Línea 1" },
+    { "respuesta": "B", "confianza": 55.2, "fuenteLinea": "Token 14" },
+    { "respuesta": "", "confianza": null, "fuenteLinea": "" }
+  ],
+  "texto": "AB"
 }
 ```
 
-- `lista`: vector indexado por pregunta (permite vacíos).
+- `lista`: vector indexado por pregunta con metadatos OCR enriquecidos.
+- `respuesta`: letra normalizada `A|B|C|D` o vacío.
+- `confianza`: porcentaje (`0-100`) reportado por Tesseract cuando está disponible.
+- `fuenteLinea`: referencia a la línea/token OCR que originó la respuesta.
 - `texto`: concatenado limpio para validaciones rápidas.
 
 ## Entidad `puntuacionPorPregunta`
@@ -49,10 +56,15 @@ Arreglo de objetos, uno por pregunta.
     "respuestaEstudiante": "A",
     "correcta": true,
     "puntaje": 10,
-    "justificacionIA": "Coincide con la clave oficial; mantiene el criterio contable esperado."
+    "justificacionIA": "Coincide con la clave oficial; mantiene el criterio contable esperado.",
+    "confianzaOCR": 92.5,
+    "fuenteOCR": "Línea 1",
+    "bajaConfianza": false
   }
 ]
 ```
+
+- `bajaConfianza`: `true` cuando la confianza OCR está por debajo del umbral docente configurado en frontend.
 
 ## Entidad `calificacionFinal`
 

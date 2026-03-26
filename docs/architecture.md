@@ -39,6 +39,22 @@ CorrectorExamen permite **configurar, corregir y reportar exámenes de selecció
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
+
+## Flujo de datos OCR enriquecido
+
+1. `StepIngresoRespuestas` invoca `procesarImagenOCR` de `src/services/ocrService.js`.
+2. Tesseract devuelve `text` y, cuando están disponibles, metadatos `lines[]` o `words[]` con `confidence`.
+3. `parsearOCRPorNumeroPregunta` (en `src/utils/examUtils.js`) aplica parsing tolerante a ruido (ej.: `1) A`, `P1-A`, `01.A`, y caracteres confusos `4/8/0/O`).
+4. El frontend conserva una estructura enriquecida por pregunta: `{ respuesta, confianza, fuenteLinea }`.
+5. `StepIngresoRespuestas` y `StepRevision` resaltan filas con baja confianza para revisión docente.
+
+### Contrato OCR interno
+
+- `ocrService.procesarImagenOCR(...)` retorna:
+  - `textoDetectado: string`
+  - `respuestasParseadas: Array<{ respuesta: string, confianza: number | null, fuenteLinea: string }>`
+- Umbral de baja confianza en UI: `< 65` (porcentaje OCR).
+
 ## Flujo de datos de IA
 
 1. `StepRevision` dispara `sugerirCalificacionConIA`.
