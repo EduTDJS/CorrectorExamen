@@ -1,8 +1,16 @@
 import http from 'node:http';
 
 const PORT = Number(process.env.PORT || 8787);
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
+const REQUEST_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS || 20000);
+const AI_PROVIDER = (process.env.AI_PROVIDER || 'anthropic').toLowerCase();
+
+const PROVIDER_ERRORS = {
+  CONFIG: 'provider_config_error',
+  TIMEOUT: 'provider_timeout',
+  UPSTREAM: 'provider_upstream_error',
+  CONTRACT: 'provider_contract_error',
+  PAYLOAD: 'payload_validation_error'
+};
 
 const sendJson = (res, statusCode, body) => {
   res.writeHead(statusCode, {
@@ -43,68 +51,230 @@ const buildPrompt = ({ datos, puntaje }) => ([
   'Responde SOLO JSON: {"puntuacion_sugerida": number, "justificacion_breve": "texto"}'
 ].join('\n'));
 
-const handler = async (req, res) => {
-  if (req.method === 'POST' && req.url === '/api/calificacion/sugerir') {
-    if (!ANTHROPIC_API_KEY) {
-      sendJson(res, 500, { error: { message: 'ANTHROPIC_API_KEY no está configurada en el servidor.' } });
-      return;
+class ProviderIntegrationError extends Error {
+  constructor(message, { status = 502, code = PROVIDER_ERRORS.UPSTREAM } = {}) {
+    super(message);
+    this.name = 'ProviderIntegrationError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
+const extraerJsonDeTexto = (texto = '') => {
+  const input = String(texto).trim();
+  if (!input) throw new ProviderIntegrationError('El proveedor devolvió texto vacío.', { code: PROVIDER_ERRORS.CONTRACT });
+
+  try {
+    return JSON.parse(input);
+  } catch {
+    const inicio = input.indexOf('{');
+    const fin = input.lastIndexOf('}');
+    if (inicio === -1 || fin === -1 || fin <= inicio) {
+      throw new ProviderIntegrationError('No se encontró un bloque JSON válido en la respuesta del proveedor.', { code: PROVIDER_ERRORS.CONTRACT });
     }
 
     try {
+      return JSON.parse(input.slice(inicio, fin + 1));
+    } catch {
+      throw new ProviderIntegrationError('La respuesta del proveedor no contiene JSON parseable.', { code: PROVIDER_ERRORS.CONTRACT });
+    }
+  }
+};
+
+const normalizarContrato = ({ provider, model, rawJson }) => {
+  const puntuacion = Number(rawJson?.puntuacion_sugerida);
+  const justificacion = String(rawJson?.justificacion_breve || '').trim();
+
+  if (!Number.isFinite(puntuacion) || puntuacion < 0 || puntuacion > 100) {
+    throw new ProviderIntegrationError('La puntuación devuelta por IA está fuera de rango (0-100).', { code: PROVIDER_ERRORS.CONTRACT });
+  }
+
+  if (!justificacion) {
+    throw new ProviderIntegrationError('La justificación devuelta por IA está vacía.', { code: PROVIDER_ERRORS.CONTRACT });
+  }
+
+  return {
+    puntuacion: puntuacion.toFixed(2),
+    justificacion,
+    proveedor: provider,
+    modelo: model
+  };
+};
+
+const fetchWithTimeout = async (url, options, timeoutMs) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    return response;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new ProviderIntegrationError(`La solicitud al proveedor excedió el tiempo límite (${timeoutMs / 1000}s).`, {
+        status: 504,
+        code: PROVIDER_ERRORS.TIMEOUT
+      });
+    }
+
+    throw new ProviderIntegrationError(error?.message || 'No se pudo conectar con el proveedor de IA.');
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
+class AnthropicProvider {
+  constructor() {
+    this.name = 'anthropic';
+    this.apiKey = process.env.ANTHROPIC_API_KEY;
+    this.model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
+  }
+
+  validateConfig() {
+    if (!this.apiKey) {
+      throw new ProviderIntegrationError('ANTHROPIC_API_KEY no está configurada en el servidor.', {
+        status: 500,
+        code: PROVIDER_ERRORS.CONFIG
+      });
+    }
+  }
+
+  async suggestGrade({ datos, puntaje }) {
+    this.validateConfig();
+
+    const response = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': this.apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: this.model,
+        max_tokens: 250,
+        temperature: 0.2,
+        messages: [{ role: 'user', content: buildPrompt({ datos, puntaje }) }]
+      })
+    }, REQUEST_TIMEOUT_MS);
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new ProviderIntegrationError(data?.error?.message || 'Error inesperado al consultar Anthropic.', {
+        status: response.status,
+        code: PROVIDER_ERRORS.UPSTREAM
+      });
+    }
+
+    const textoIa = (data?.content || [])
+      .filter((bloque) => bloque?.type === 'text')
+      .map((bloque) => bloque?.text || '')
+      .join('\n');
+
+    return normalizarContrato({ provider: this.name, model: this.model, rawJson: extraerJsonDeTexto(textoIa) });
+  }
+}
+
+class OpenAIProvider {
+  constructor() {
+    this.name = 'openai';
+    this.apiKey = process.env.OPENAI_API_KEY;
+    this.model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  }
+
+  validateConfig() {
+    if (!this.apiKey) {
+      throw new ProviderIntegrationError('OPENAI_API_KEY no está configurada en el servidor.', {
+        status: 500,
+        code: PROVIDER_ERRORS.CONFIG
+      });
+    }
+  }
+
+  async suggestGrade({ datos, puntaje }) {
+    this.validateConfig();
+
+    const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify({
+        model: this.model,
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'user', content: buildPrompt({ datos, puntaje }) }]
+      })
+    }, REQUEST_TIMEOUT_MS);
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new ProviderIntegrationError(data?.error?.message || 'Error inesperado al consultar OpenAI.', {
+        status: response.status,
+        code: PROVIDER_ERRORS.UPSTREAM
+      });
+    }
+
+    const textoIa = data?.choices?.[0]?.message?.content || '';
+    return normalizarContrato({ provider: this.name, model: this.model, rawJson: extraerJsonDeTexto(textoIa) });
+  }
+}
+
+const createProvider = (providerName) => {
+  if (providerName === 'anthropic') return new AnthropicProvider();
+  if (providerName === 'openai') return new OpenAIProvider();
+
+  throw new ProviderIntegrationError(`AI_PROVIDER inválido: "${providerName}". Usa "anthropic" u "openai".`, {
+    status: 500,
+    code: PROVIDER_ERRORS.CONFIG
+  });
+};
+
+const activeProvider = createProvider(AI_PROVIDER);
+
+const validarPayload = (payload) => {
+  const { datos, puntaje } = payload || {};
+
+  if (!datos || typeof datos !== 'object') {
+    throw new ProviderIntegrationError('El campo "datos" es obligatorio.', { status: 400, code: PROVIDER_ERRORS.PAYLOAD });
+  }
+
+  if (!Number.isFinite(Number(puntaje))) {
+    throw new ProviderIntegrationError('El campo "puntaje" debe ser numérico.', { status: 400, code: PROVIDER_ERRORS.PAYLOAD });
+  }
+
+  return { datos, puntaje };
+};
+
+const handler = async (req, res) => {
+  if (req.method === 'GET' && req.url === '/api/calificacion/proveedor') {
+    sendJson(res, 200, {
+      proveedor: activeProvider.name,
+      modelo: activeProvider.model,
+      timeoutMs: REQUEST_TIMEOUT_MS
+    });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/calificacion/sugerir') {
+    try {
       const payload = await parseBody(req);
-      const { datos, puntaje } = payload;
-
-      if (!datos || typeof datos !== 'object') {
-        sendJson(res, 400, { error: { message: 'El campo "datos" es obligatorio.' } });
-        return;
-      }
-
-      if (!Number.isFinite(Number(puntaje))) {
-        sendJson(res, 400, { error: { message: 'El campo "puntaje" debe ser numérico.' } });
-        return;
-      }
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000);
-
-      try {
-        const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': ANTHROPIC_API_KEY,
-            'anthropic-version': '2023-06-01'
-          },
-          body: JSON.stringify({
-            model: ANTHROPIC_MODEL,
-            max_tokens: 250,
-            temperature: 0.2,
-            messages: [{ role: 'user', content: buildPrompt({ datos, puntaje }) }]
-          }),
-          signal: controller.signal
-        });
-
-        const data = await anthropicResponse.json();
-
-        if (!anthropicResponse.ok) {
-          sendJson(res, anthropicResponse.status, {
-            error: { message: data?.error?.message || 'Error inesperado al consultar Anthropic.' }
-          });
-          return;
-        }
-
-        sendJson(res, 200, data);
-      } catch (error) {
-        if (error?.name === 'AbortError') {
-          sendJson(res, 504, { error: { message: 'La solicitud al proveedor excedió el tiempo límite (20s).' } });
-          return;
-        }
-
-        sendJson(res, 502, { error: { message: error?.message || 'No se pudo consultar Anthropic.' } });
-      } finally {
-        clearTimeout(timeoutId);
-      }
+      const { datos, puntaje } = validarPayload(payload);
+      const sugerencia = await activeProvider.suggestGrade({ datos, puntaje });
+      sendJson(res, 200, sugerencia);
     } catch (error) {
+      if (error instanceof ProviderIntegrationError) {
+        sendJson(res, error.status || 500, {
+          error: {
+            message: error.message,
+            code: error.code,
+            provider: activeProvider.name
+          }
+        });
+        return;
+      }
+
       sendJson(res, 400, { error: { message: error?.message || 'No se pudo procesar la solicitud.' } });
     }
 
@@ -119,5 +289,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Backend de CalificaYa escuchando en http://localhost:${PORT}`);
+  console.log(`Backend de CalificaYa escuchando en http://localhost:${PORT} usando proveedor ${activeProvider.name}`);
 });

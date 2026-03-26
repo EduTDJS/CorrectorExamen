@@ -1,12 +1,15 @@
-# Seguridad: integración IA con backend propio
+# Seguridad: integración IA multi-proveedor con backend propio
 
-La aplicación migró de un modelo donde la API key de Anthropic se guardaba en `localStorage` a un modelo **server-side** donde el secreto vive únicamente en el backend.
+La aplicación usa un modelo **server-side** donde los secretos de proveedores (`Anthropic` y `OpenAI`) viven únicamente en el backend.
 
 ## Estado actual
 
-- El frontend ya no solicita ni almacena API keys del proveedor.
+- El frontend no solicita ni almacena API keys del proveedor.
 - La UI invoca `POST /api/calificacion/sugerir` en el backend propio.
-- El backend firma la llamada a Anthropic usando `ANTHROPIC_API_KEY` desde variables de entorno.
+- El backend selecciona proveedor por `AI_PROVIDER` y firma la llamada saliente con:
+  - `ANTHROPIC_API_KEY` (Anthropic)
+  - `OPENAI_API_KEY` (OpenAI)
+- El backend expone `GET /api/calificacion/proveedor` sin secretos, solo metadatos operativos (proveedor/modelo/timeout).
 
 ## Riesgos mitigados
 
@@ -14,7 +17,7 @@ La aplicación migró de un modelo donde la API key de Anthropic se guardaba en 
    - Eliminado el almacenamiento de la key en navegador.
 
 2. **Persistencia de credenciales en equipos compartidos**
-   - Ya no hay credenciales de Anthropic persistidas en `localStorage`.
+   - No hay credenciales de Anthropic ni OpenAI persistidas en `localStorage`.
 
 3. **Fuga accidental por UX o soporte**
    - Se elimina el campo visual de API key en ajustes.
@@ -27,18 +30,24 @@ La aplicación migró de un modelo donde la API key de Anthropic se guardaba en 
 2. **Uso abusivo del endpoint interno**
    - Recomendado: autenticación de usuarios, rate limiting y trazabilidad.
 
-3. **Errores de configuración (`ANTHROPIC_API_KEY`)**
-   - El backend responde con error explícito si la variable no existe.
+3. **Errores de configuración (`AI_PROVIDER`, API key y modelo)**
+   - El backend valida configuración al invocar el proveedor y responde con `provider_config_error`.
 
 ## Recomendaciones operativas
 
-- Administrar `ANTHROPIC_API_KEY` vía secret manager (no en repositorio).
+- Administrar `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` vía secret manager (no en repositorio).
 - Rotar credenciales periódicamente y ante cualquier sospecha de fuga.
 - Registrar métricas de latencia/errores de `/api/calificacion/sugerir`.
 - Aplicar políticas de red (egress control) para limitar destinos salientes.
+- Mantener `AI_REQUEST_TIMEOUT_MS` ajustado (default 20s) para evitar cuelgues y consumo excesivo.
+- Validar payloads en backend (`datos` objeto y `puntaje` numérico) antes de consumir proveedor.
 
 ## Variables de entorno mínimas
 
-- `ANTHROPIC_API_KEY` (obligatoria)
-- `ANTHROPIC_MODEL` (opcional, por defecto `claude-sonnet-4-20250514`)
-- `PORT` (opcional, por defecto `8787`)
+- `AI_PROVIDER` (opcional, default `anthropic`; valores: `anthropic`, `openai`)
+- `ANTHROPIC_API_KEY` (obligatoria si `AI_PROVIDER=anthropic`)
+- `ANTHROPIC_MODEL` (opcional, default `claude-sonnet-4-20250514`)
+- `OPENAI_API_KEY` (obligatoria si `AI_PROVIDER=openai`)
+- `OPENAI_MODEL` (opcional, default `gpt-4o-mini`)
+- `AI_REQUEST_TIMEOUT_MS` (opcional, default `20000`)
+- `PORT` (opcional, default `8787`)

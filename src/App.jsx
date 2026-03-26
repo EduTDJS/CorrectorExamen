@@ -7,7 +7,7 @@ import StepReporteFinal from './features/exam-workflow/StepReporteFinal';
 import StepRevision from './features/exam-workflow/StepRevision';
 import { useExamWorkflow } from './hooks/useExamWorkflow';
 import { useReportes } from './hooks/useReportes';
-import { sugerirCalificacionIA } from './services/aiService';
+import { obtenerProveedorIA, sugerirCalificacionIA } from './services/aiService';
 import { exportarGrupoCSV, exportarIndividualCSV, exportarIndividualPDF } from './services/exportService';
 import { procesarImagenOCR } from './services/ocrService';
 import { guardarDecisionFinal, leerDecisionFinal, normalizarNombreMateria } from './services/storageService';
@@ -42,7 +42,14 @@ function App() {
   const [panelAjustesAbierto, setPanelAjustesAbierto] = useState(false);
   const [ocrEstado, setOcrEstado] = useState({ procesando: false, progreso: 0, error: '', textoDetectado: '' });
   const [decisionFinal, setDecisionFinal] = useState(() => leerDecisionFinal());
-  const [iaEstado, setIaEstado] = useState({ cargando: false, error: '', sugerencia: null });
+  const [iaEstado, setIaEstado] = useState({
+    cargando: false,
+    error: '',
+    sugerencia: null,
+    proveedorActivo: 'desconocido',
+    modeloActivo: 'desconocido',
+    timeoutMs: 0
+  });
   const [reporteActualRef, setReporteActualRef] = useState({ id: null, firma: null });
 
   const { pasoActual, estadoActual, avanzarPaso, retrocederPaso } = useExamWorkflow(pasos);
@@ -58,6 +65,28 @@ function App() {
   useEffect(() => {
     guardarDecisionFinal(decisionFinal);
   }, [decisionFinal]);
+
+  useEffect(() => {
+    const cargarProveedor = async () => {
+      try {
+        const proveedor = await obtenerProveedorIA();
+        setIaEstado((previo) => ({
+          ...previo,
+          proveedorActivo: proveedor.proveedor,
+          modeloActivo: proveedor.modelo,
+          timeoutMs: proveedor.timeoutMs,
+          error: ''
+        }));
+      } catch (error) {
+        setIaEstado((previo) => ({
+          ...previo,
+          error: error?.message || 'No se pudo obtener la configuración del proveedor de IA activo.'
+        }));
+      }
+    };
+
+    cargarProveedor();
+  }, []);
 
   const totalPreguntasNumero = Number(datos.totalPreguntas);
 
@@ -204,18 +233,26 @@ function App() {
   };
 
   const sugerirCalificacionConIA = async () => {
-    setIaEstado({ cargando: true, error: '', sugerencia: null });
+    setIaEstado((previo) => ({ ...previo, cargando: true, error: '', sugerencia: null }));
     try {
       const sugerencia = await sugerirCalificacionIA({ datos, puntaje: resultadoRevision.puntaje });
-      setIaEstado({ cargando: false, error: '', sugerencia });
+      setIaEstado((previo) => ({
+        ...previo,
+        cargando: false,
+        error: '',
+        sugerencia,
+        proveedorActivo: sugerencia.proveedor || previo.proveedorActivo,
+        modeloActivo: sugerencia.modelo || previo.modeloActivo
+      }));
       setDecisionFinal(sugerencia);
       setErrores((previo) => ({ ...previo, decisionFinal: '' }));
     } catch (error) {
-      setIaEstado({
+      setIaEstado((previo) => ({
+        ...previo,
         cargando: false,
-        error: error?.name === 'AbortError' ? 'La solicitud excedió el tiempo límite (20s).' : (error?.message || 'No se pudo obtener sugerencia de IA.'),
+        error: error?.message || 'No se pudo obtener sugerencia de IA.',
         sugerencia: null
-      });
+      }));
     }
   };
 
@@ -291,7 +328,11 @@ function App() {
       {panelAjustesAbierto && (
         <section className="panel ajustes">
           <h2>Ajustes</h2>
-          <p className="detalle">La integración de IA usa un endpoint backend interno. La API key de Anthropic se gestiona solo en el servidor.</p>
+          <p className="detalle">
+            Proveedor IA activo: <strong>{iaEstado.proveedorActivo}</strong> ({iaEstado.modeloActivo}).
+            Timeout backend: {iaEstado.timeoutMs > 0 ? `${Math.round(iaEstado.timeoutMs / 1000)}s` : 'N/D'}.
+          </p>
+          <p className="detalle">La integración de IA usa un endpoint backend interno. Las API keys se gestionan solo en el servidor.</p>
         </section>
       )}
 

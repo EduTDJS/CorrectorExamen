@@ -77,7 +77,7 @@ src/
 3. Procesamiento OCR en cliente con Tesseract.js y parser por número de pregunta.
 4. Revisión editable de respuestas en tabla antes de calificar.
 5. Revisión de calificaciones (aciertos, errores, porcentaje y puntaje) con desglose por pregunta basado en evidencia (clave, respuesta, estado, confianza OCR y fuente).
-6. Sugerencia de calificación con Anthropic (`claude-sonnet-4-20250514`) usando prompt interno en español con criterios contables.
+6. Sugerencia de calificación con proveedor de IA configurable (`anthropic` u `openai`) usando prompt interno en español con criterios contables.
 7. Reporte final con decisión final editable de la profesora y exportación simulada.
 
 ## Contrato de desglose por pregunta
@@ -96,20 +96,18 @@ El sistema usa un contrato explícito y reutilizable para cada ítem del desglos
 
 En **Revisión de calificaciones**, el razonamiento se visualiza en un panel expandible por fila. En **exportación PDF/CSV**, estos mismos campos se incluyen por pregunta.
 
-## Ajustes y seguridad de API key
+## Integración IA multi-proveedor (backend)
 
-- Hay un panel **Ajustes API** para capturar la API key de Anthropic.
-- La API key se guarda localmente en `localStorage` y **no se hardcodea** en el código.
-- Puede guardarse o eliminarse desde la UI.
-
-## Integración de IA y parsing
-
-- Se realiza `fetch` directo a `https://api.anthropic.com/v1/messages`.
-- El prompt interno exige salida JSON con:
-  - `puntuacion_sugerida`
-  - `justificacion_breve`
-- La respuesta se parsea de forma robusta extrayendo JSON del texto devuelto.
-- La sugerencia de IA autocompleta la decisión final, pero siempre puede editarse manualmente.
+- El frontend siempre llama `POST /api/calificacion/sugerir`.
+- El backend usa patrón **provider/strategy** con selector `AI_PROVIDER`:
+  - `anthropic` → `https://api.anthropic.com/v1/messages`
+  - `openai` → `https://api.openai.com/v1/chat/completions`
+- Contrato normalizado de respuesta al frontend (estable):
+  - `puntuacion`
+  - `justificacion`
+  - `proveedor`
+  - `modelo`
+- La UI también consulta `GET /api/calificacion/proveedor` para mostrar proveedor/modelo activos.
 
 ## Persistencia de decisión final
 
@@ -132,19 +130,22 @@ La UI muestra errores claros en español para:
 6. Exportación individual (PDF/CSV) desde reporte guardado o snapshot actual, sin duplicar historial.
 7. Historial local de reportes con filtros.
 
-## Integración de IA (estado actual)
+## Variables de entorno de IA
 
-- El frontend llama `POST /api/calificacion/sugerir`.
-- El backend consulta `https://api.anthropic.com/v1/messages`.
-- La API key de Anthropic se gestiona **solo en servidor** (`ANTHROPIC_API_KEY`).
-- La UI ya no solicita secretos al usuario final.
+- `AI_PROVIDER` (opcional, default `anthropic`): proveedor activo (`anthropic` u `openai`).
+- `ANTHROPIC_API_KEY` (obligatoria si `AI_PROVIDER=anthropic`).
+- `ANTHROPIC_MODEL` (opcional, default `claude-sonnet-4-20250514`).
+- `OPENAI_API_KEY` (obligatoria si `AI_PROVIDER=openai`).
+- `OPENAI_MODEL` (opcional, default `gpt-4o-mini`).
+- `AI_REQUEST_TIMEOUT_MS` (opcional, default `20000`).
+- `PORT` (opcional, por defecto `8787`).
 
 ## Ejecución local
 
 1. Inicia backend en una terminal:
 
 ```bash
-ANTHROPIC_API_KEY=tu_key npm run dev:api
+AI_PROVIDER=anthropic ANTHROPIC_API_KEY=tu_key npm run dev:api
 ```
 
 2. Inicia frontend en otra terminal:
@@ -154,3 +155,9 @@ npm run dev
 ```
 
 > Vite proxy redirige `/api/*` a `http://localhost:8787`.
+
+Ejemplo con OpenAI:
+
+```bash
+AI_PROVIDER=openai OPENAI_API_KEY=tu_key OPENAI_MODEL=gpt-4o-mini npm run dev:api
+```
