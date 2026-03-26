@@ -4,7 +4,7 @@ import path from 'node:path';
 const DB_FILE = process.env.REPORTS_JSON_FALLBACK_FILE || path.resolve(process.cwd(), 'backend/db/data.fallback.json');
 
 const emptyDatabase = () => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   reports: [],
   audit_logs: []
 });
@@ -26,7 +26,7 @@ const readDatabase = async () => {
     const raw = await readFile(DB_FILE, 'utf-8');
     const parsed = JSON.parse(raw);
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       reports: Array.isArray(parsed?.reports) ? parsed.reports : [],
       audit_logs: Array.isArray(parsed?.audit_logs) ? parsed.audit_logs : []
     };
@@ -37,7 +37,7 @@ const readDatabase = async () => {
 
 const writeDatabase = async (db) => {
   const safeDb = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     reports: Array.isArray(db?.reports) ? db.reports : [],
     audit_logs: Array.isArray(db?.audit_logs) ? db.audit_logs : []
   };
@@ -51,24 +51,19 @@ const getById = (db, reportId) => db.reports.find((report) => report.id === repo
 export const createJsonFallbackAdapter = () => ({
   mode: 'json_fallback',
   filePath: DB_FILE,
-  async createReportRecord(record, auditLog) {
+  async upsertReportGraph(reportRecord, _normalizedRecord, auditLog) {
     const db = await readDatabase();
-    db.reports.push(record);
-    db.audit_logs.push(auditLog);
-    await writeDatabase(db);
-    return record;
-  },
-  async updateReportRecord(reportId, record, auditLog) {
-    const db = await readDatabase();
-    const index = db.reports.findIndex((report) => report.id === reportId);
+    const index = db.reports.findIndex((report) => report.id === reportRecord.id);
+
     if (index === -1) {
-      return null;
+      db.reports.push(reportRecord);
+    } else {
+      db.reports[index] = reportRecord;
     }
 
-    db.reports[index] = record;
     db.audit_logs.push(auditLog);
     await writeDatabase(db);
-    return record;
+    return reportRecord;
   },
   async getReportRecordById(reportId) {
     const db = await readDatabase();
