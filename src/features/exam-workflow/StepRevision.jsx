@@ -1,4 +1,8 @@
 function StepRevision({ resultadoRevision, mapearLetraPucmm, sugerirCalificacionConIA, iaEstado, desglosePreguntas }) {
+  const preguntasBajaConfianza = desglosePreguntas
+    .filter((item) => item.bajaConfianza && typeof item.confianzaOCR === 'number')
+    .sort((a, b) => a.confianzaOCR - b.confianzaOCR);
+
   return (
     <div className="paso">
       <h2>Revisión de calificaciones</h2>
@@ -18,6 +22,15 @@ function StepRevision({ resultadoRevision, mapearLetraPucmm, sugerirCalificacion
       </p>
 
       {iaEstado.error && <p className="error">{iaEstado.error}</p>}
+
+      {preguntasBajaConfianza.length > 0 && (
+        <div className="resumen baja-confianza-resumen">
+          <p><strong>Revisión manual priorizada:</strong> revise primero estas preguntas con menor confianza OCR.</p>
+          <p>
+            {preguntasBajaConfianza.map((item) => `#${item.numero} (${item.confianzaOCR.toFixed(1)}%)`).join(' · ')}
+          </p>
+        </div>
+      )}
 
       <table className="tabla-respuestas">
         <thead>
@@ -58,7 +71,7 @@ function StepRevision({ resultadoRevision, mapearLetraPucmm, sugerirCalificacion
           ))}
         </tbody>
       </table>
-      <p className="detalle">Las filas resaltadas indican baja confianza OCR y requieren revisión docente.</p>
+      <p className="detalle">Las filas resaltadas indican baja confianza OCR; priorice su revisión manual antes de confirmar la calificación.</p>
     </div>
   );
 }

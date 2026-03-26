@@ -16,6 +16,8 @@ function StepIngresoRespuestas({
   letrasValidas,
   umbralBajaConfianza
 }) {
+  const esDispositivoMovil = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent);
+
   return (
     <div className="paso">
       <h2>Ingreso de respuestas</h2>
@@ -33,7 +35,23 @@ function StepIngresoRespuestas({
         </label>
       ) : (
         <>
-          <label>Foto o escaneo de respuestas<input type="file" accept="image/*" onChange={(e) => actualizarDato('archivoImagen', e.target.files?.[0] || null)} /></label>
+          <label>
+            Foto o escaneo de respuestas
+            <input
+              type="file"
+              accept="image/*"
+              capture={esDispositivoMovil ? 'environment' : undefined}
+              onChange={(e) => actualizarDato('archivoImagen', e.target.files?.[0] || null)}
+            />
+          </label>
+          <div className="ocr-ayuda">
+            <p className="detalle"><strong>Antes de tomar la foto:</strong></p>
+            <ul>
+              <li>Use buena iluminación y evite sombras sobre la hoja.</li>
+              <li>Toque la pantalla para asegurar el enfoque antes de capturar.</li>
+              <li>Encuadre toda la hoja en vertical, sin recortes.</li>
+            </ul>
+          </div>
           <button type="button" onClick={procesarImagenConOCR} disabled={!datos.archivoImagen || ocrEstado.procesando}>{ocrEstado.procesando ? 'Procesando OCR...' : 'Procesar imagen con OCR'}</button>
           {ocrEstado.procesando && (<div className="progreso-ocr"><progress value={ocrEstado.progreso} max="100" /><span>{ocrEstado.progreso}% completado</span></div>)}
           {ocrEstado.error && <p className="error">{ocrEstado.error}</p>}
@@ -43,6 +61,7 @@ function StepIngresoRespuestas({
 
       <div>
         <h3>Respuestas extraídas / editables</h3>
+        <p className="detalle">Priorice revisar primero las filas resaltadas: tienen confianza OCR menor a {umbralBajaConfianza}%.</p>
         <table className="tabla-respuestas">
           <thead><tr><th>Pregunta</th><th>Respuesta</th><th>Confianza OCR</th><th>Fuente</th></tr></thead>
           <tbody>
