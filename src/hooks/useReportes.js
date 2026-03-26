@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { guardarReportes, leerReportes, normalizarNombreMateria } from '../services/storageService';
+import {
+  guardarReporteApi,
+  guardarReportes,
+  leerReportes,
+  listarReportesApi,
+  normalizarNombreMateria
+} from '../services/storageService';
 
 export const agruparReportesPorMateria = (reportes) => {
   const mapa = new Map();
@@ -35,10 +41,47 @@ export const agruparReportesPorMateria = (reportes) => {
 export const useReportes = () => {
   const [reportes, setReportes] = useState(() => leerReportes());
   const [filtrosHistorial, setFiltrosHistorial] = useState({ materia: '', grupo: '', fecha: '' });
+  const [usaBackend, setUsaBackend] = useState(false);
+
+  useEffect(() => {
+    let cancelado = false;
+    listarReportesApi()
+      .then((data) => {
+        if (cancelado) return;
+        setReportes(data);
+        setUsaBackend(true);
+      })
+      .catch(() => {
+        setUsaBackend(false);
+      });
+
+    return () => {
+      cancelado = true;
+    };
+  }, []);
 
   useEffect(() => {
     guardarReportes(reportes);
   }, [reportes]);
+
+  const guardarReporte = async (reporte) => {
+    if (!usaBackend) {
+      setReportes((previo) => {
+        const existe = previo.some((item) => item.id === reporte.id);
+        if (!existe) return [reporte, ...previo];
+        return previo.map((item) => (item.id === reporte.id ? reporte : item));
+      });
+      return reporte;
+    }
+
+    const guardado = await guardarReporteApi(reporte);
+    setReportes((previo) => {
+      const existe = previo.some((item) => item.id === guardado.id);
+      if (!existe) return [guardado, ...previo];
+      return previo.map((item) => (item.id === guardado.id ? guardado : item));
+    });
+    return guardado;
+  };
 
   const reportesFiltrados = useMemo(() => reportes.filter((reporte) => {
     const filtroMateriaNormalizada = normalizarNombreMateria(filtrosHistorial.materia);
@@ -58,6 +101,7 @@ export const useReportes = () => {
   return {
     reportes,
     setReportes,
+    guardarReporte,
     filtrosHistorial,
     setFiltrosHistorial,
     reportesFiltrados,

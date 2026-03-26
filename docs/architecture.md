@@ -27,19 +27,21 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
 ┌───────────────┐              ┌───────────────┐           ┌───────────────┐
 │Servicios ext. │              │Persistencia   │           │Exportación    │
 │ocrService     │              │storageService │           │exportService  │
-│(Tesseract.js) │              │(localStorage) │           │(jsPDF + CSV)  │
+│(Tesseract.js) │              │(API + fallback│           │(jsPDF + CSV)  │
+│               │              │localStorage)  │           │               │
 └──────┬────────┘              └──────┬────────┘           └──────┬────────┘
        │                               │                           │
        ▼                               ▼                           ▼
 ┌───────────────┐              ┌───────────────┐           ┌───────────────┐
-│aiService      │              │Navegador      │           │Descargas      │
-│/api/... local │              │almacenamiento │           │.pdf / .csv    │
+│aiService      │              │Backend DB     │           │Descargas      │
+│/api/... local │              │reports/audit  │           │.pdf / .csv    │
 └──────┬────────┘              └───────────────┘           └───────────────┘
        │
        ▼
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ Backend Node (backend/server.js)                                          │
 │ POST /api/calificacion/sugerir -> selector por AI_PROVIDER                │
+│ POST /api/reportes + GET /api/reportes + GET /api/reportes/:id            │
 │ Provider strategy: Anthropic Messages | OpenAI Chat Completions           │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -69,6 +71,15 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
    - `openai` → `https://api.openai.com/v1/chat/completions`
 5. El backend normaliza la respuesta con `normalizarContrato(...)` y retorna un contrato estable.
 6. El frontend usa ese contrato para autocompletar la decisión final editable.
+
+## Flujo de persistencia de reportes
+
+1. `App.jsx` construye el objeto `reporte` final.
+2. `useReportes.guardarReporte` intenta guardar mediante `storageService.guardarReporteApi`.
+3. `backend/server.js` recibe `POST /api/reportes` y valida payload mínimo.
+4. `reportRepository` crea o actualiza el reporte en `reports`.
+5. El backend registra `report_created` o `report_updated` en `audit_logs` con actor técnico y timestamp.
+6. El frontend refresca estado local en memoria y guarda copia local como fallback.
 
 ## Contratos de entrada/salida
 
@@ -119,3 +130,4 @@ Ejemplo con OpenAI:
 - [ADR 0004: Exportación PDF/CSV en cliente](adr/0004-exportacion-pdf-csv-en-cliente.md)
 - [ADR 0005: Migración IA a backend y custodia de secretos](adr/0005-migracion-ia-a-backend.md)
 - [ADR 0006: Selección de proveedor IA por variable de entorno y contrato normalizado](adr/0006-ai-provider-env-y-contrato-normalizado.md)
+- [ADR 0007: Persistencia de reportes en backend con auditoría](adr/0007-persistencia-reportes-en-backend-con-auditoria.md)

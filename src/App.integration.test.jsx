@@ -19,7 +19,7 @@ describe('App - flujo guardar y exportar', () => {
     vi.clearAllMocks();
   });
 
-  it('no duplica reportes al exportar varias veces un reporte guardado', () => {
+  it('no duplica reportes al exportar varias veces un reporte guardado', async () => {
     render(<App />);
 
     fireEvent.change(screen.getByLabelText('Materia'), { target: { value: 'Contabilidad I' } });
@@ -32,16 +32,16 @@ describe('App - flujo guardar y exportar', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
 
-    fireEvent.change(screen.getByLabelText('Respuestas del estudiante (A/B/C/D)'), { target: { value: 'AB' } });
+    fireEvent.change(await screen.findByLabelText('Respuestas del estudiante (A/B/C/D)'), { target: { value: 'AB' } });
     fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Siguiente' }));
 
-    fireEvent.change(screen.getByLabelText('Puntuación final (0-100)'), { target: { value: '100' } });
+    fireEvent.change(await screen.findByLabelText('Puntuación final (0-100)'), { target: { value: '100' } });
     fireEvent.change(screen.getByLabelText('Justificación final'), { target: { value: 'Excelente desempeño' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Guardar reporte' }));
 
-    expect(screen.getByText(/Estado del reporte actual:/)).toHaveTextContent('Guardado');
+    expect(await screen.findByText(/Estado del reporte actual:/)).toHaveTextContent('Guardado');
 
     fireEvent.click(screen.getByRole('button', { name: 'Exportar PDF' }));
     fireEvent.click(screen.getByRole('button', { name: 'Exportar CSV' }));

@@ -1,5 +1,11 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
+import {
+  createReport,
+  getReportById,
+  listReports,
+  updateReport
+} from './repositories/reportRepository.js';
 
 const PORT = Number(process.env.PORT || 8787);
 const REQUEST_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS || 20000);
@@ -22,7 +28,8 @@ const API_ERRORS = {
   UNAUTHORIZED: 'internal_auth_unauthorized',
   RATE_LIMITED: 'rate_limit_exceeded',
   BAD_REQUEST: 'bad_request',
-  NOT_FOUND: 'not_found'
+  NOT_FOUND: 'not_found',
+  PAYLOAD: 'payload_validation_error'
 };
 
 const sendJson = (res, statusCode, body, { requestId } = {}) => {
@@ -401,6 +408,31 @@ const validarPayload = (payload) => {
   return { datos, puntaje };
 };
 
+const validarPayloadReporte = (payload) => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new ApiError('El payload de reporte debe ser un objeto JSON.', {
+      status: 400,
+      code: API_ERRORS.PAYLOAD
+    });
+  }
+
+  if (!payload.examen || typeof payload.examen !== 'object') {
+    throw new ApiError('El campo "examen" es obligatorio.', {
+      status: 400,
+      code: API_ERRORS.PAYLOAD
+    });
+  }
+
+  if (!payload.estudiante || typeof payload.estudiante !== 'object') {
+    throw new ApiError('El campo "estudiante" es obligatorio.', {
+      status: 400,
+      code: API_ERRORS.PAYLOAD
+    });
+  }
+
+  return payload;
+};
+
 const handler = async (req, res) => {
   const requestId = getOrCreateRequestId(req);
   const startedAt = Date.now();
@@ -519,6 +551,66 @@ const handler = async (req, res) => {
       });
     }
 
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/reportes') {
+    try {
+      const reportes = await listReports();
+      sendJson(res, 200, { data: reportes }, { requestId });
+    } catch (error) {
+      sendJson(res, 500, {
+        error: {
+          message: error?.message || 'No se pudieron listar reportes.',
+          code: API_ERRORS.BAD_REQUEST,
+          requestId
+        }
+      }, { requestId });
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && req.url?.startsWith('/api/reportes/')) {
+    const reportId = decodeURIComponent(req.url.replace('/api/reportes/', '').trim());
+    const reporte = await getReportById(reportId);
+
+    if (!reporte) {
+      sendJson(res, 404, {
+        error: {
+          message: 'Reporte no encontrado.',
+          code: API_ERRORS.NOT_FOUND,
+          requestId
+        }
+      }, { requestId });
+      return;
+    }
+
+    sendJson(res, 200, reporte, { requestId });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/reportes') {
+    try {
+      const payload = validarPayloadReporte(await parseBody(req));
+      const actor = String(req.headers['x-actor'] || 'frontend_tecnico').trim() || 'frontend_tecnico';
+      const payloadId = typeof payload.id === 'string' ? payload.id : '';
+      const existe = payloadId ? await getReportById(payloadId) : null;
+      const reporte = existe
+        ? await updateReport(payloadId, payload, { actor })
+        : await createReport(payload, { actor });
+
+      sendJson(res, existe ? 200 : 201, reporte, { requestId });
+    } catch (error) {
+      const status = error instanceof ApiError ? error.status : 400;
+      const code = error instanceof ApiError ? error.code : API_ERRORS.BAD_REQUEST;
+      sendJson(res, status, {
+        error: {
+          message: error?.message || 'No se pudo guardar el reporte.',
+          code,
+          requestId
+        }
+      }, { requestId });
+    }
     return;
   }
 

@@ -107,8 +107,16 @@ describe('storageService', () => {
             materiaFolderId: 'materia:matematica'
           },
           justificacionesIA: [
-            { pregunta: 1, justificacion: 'Correcta' },
-            { pregunta: 2, justificacion: 'Correcta' }
+            {
+              pregunta: 1,
+              justificacion: 'Correcta',
+              desglose: expect.any(Object)
+            },
+            {
+              pregunta: 2,
+              justificacion: 'Correcta',
+              desglose: expect.any(Object)
+            }
           ]
         }
       ]);
