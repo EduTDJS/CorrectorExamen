@@ -1,0 +1,70 @@
+function StepReporteFinal({
+  datos,
+  notaFinalNumerica,
+  letraFinal,
+  decisionFinal,
+  setDecisionFinal,
+  errores,
+  guardarYExportar,
+  filtrosHistorial,
+  setFiltrosHistorial,
+  reportesFiltrados,
+  estadisticasGrupo,
+  exportarGrupoCSV
+}) {
+  return (
+    <div className="paso">
+      <h2>Reporte final y exportación</h2>
+      <ul className="resumen-final">
+        <li>Estudiante: {datos.estudianteNombre} ({datos.estudianteMatricula})</li>
+        <li>Materia: {datos.materia || 'Sin definir'}</li>
+        <li>Grupo: {datos.grupo || 'Sin definir'}</li>
+        <li>Fecha: {datos.fecha || 'Sin definir'}</li>
+        <li>Puntaje final: {notaFinalNumerica.toFixed(2)} / 100</li>
+        <li>Letra final PUCMM: {letraFinal}</li>
+      </ul>
+
+      <div className="decision-final">
+        <h3>Decisión final de la profesora</h3>
+        <label>Puntuación final (0-100)<input type="number" min="0" max="100" step="0.01" value={decisionFinal.puntuacion} onChange={(e) => setDecisionFinal((previo) => ({ ...previo, puntuacion: e.target.value }))} /></label>
+        <label>Justificación final<textarea rows="3" value={decisionFinal.justificacion} onChange={(e) => setDecisionFinal((previo) => ({ ...previo, justificacion: e.target.value }))} /></label>
+        {errores.decisionFinal && <p className="error">{errores.decisionFinal}</p>}
+      </div>
+
+      <div className="acciones-ajustes">
+        <button type="button" onClick={() => guardarYExportar('pdf')}>Guardar y exportar PDF</button>
+        <button type="button" onClick={() => guardarYExportar('csv')}>Guardar y exportar CSV</button>
+      </div>
+
+      <h3>Vista de grupo e historial</h3>
+      <div className="filtros-grid">
+        <label>Materia
+          <input value={filtrosHistorial.materia} onChange={(e) => setFiltrosHistorial((p) => ({ ...p, materia: e.target.value }))} placeholder="Filtrar por materia" />
+        </label>
+        <label>Grupo
+          <input value={filtrosHistorial.grupo} onChange={(e) => setFiltrosHistorial((p) => ({ ...p, grupo: e.target.value }))} placeholder="Filtrar por grupo" />
+        </label>
+        <label>Fecha
+          <input type="date" value={filtrosHistorial.fecha} onChange={(e) => setFiltrosHistorial((p) => ({ ...p, fecha: e.target.value }))} />
+        </label>
+      </div>
+
+      <table className="tabla-respuestas">
+        <thead><tr><th>Estudiante</th><th>Matrícula</th><th>Materia</th><th>Grupo</th><th>Fecha</th><th>Nota</th><th>Letra</th></tr></thead>
+        <tbody>
+          {reportesFiltrados.map((rep) => (
+            <tr key={rep.id}><td>{rep.estudiante.nombre}</td><td>{rep.estudiante.matricula}</td><td>{rep.examen.materia}</td><td>{rep.examen.grupo}</td><td>{rep.examen.fecha}</td><td>{rep.calificacionFinal.notaSobre100.toFixed(2)}</td><td>{rep.calificacionFinal.letra}</td></tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div className="resumen">
+        <p>Distribución de letras: A ({estadisticasGrupo.A}), B+ ({estadisticasGrupo['B+']}), B ({estadisticasGrupo.B}), C+ ({estadisticasGrupo['C+']}), C ({estadisticasGrupo.C}), D ({estadisticasGrupo.D}), F ({estadisticasGrupo.F})</p>
+      </div>
+
+      <button type="button" onClick={exportarGrupoCSV}>Exportar CSV grupal</button>
+    </div>
+  );
+}
+
+export default StepReporteFinal;

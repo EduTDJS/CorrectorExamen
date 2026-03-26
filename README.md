@@ -14,6 +14,34 @@ Frontend web para configurar, corregir y exportar resultados de exámenes.
 - `npm run build` construye la versión de producción.
 - `npm run preview` previsualiza el build.
 
+## Mapa de módulos (refactor)
+
+```text
+src/
+├── App.jsx                              # Orquestador del flujo y composición de UI
+├── components/                          # Componentes presentacionales reutilizables
+│   ├── StepIndicator.jsx
+│   └── TopBar.jsx
+├── features/
+│   └── exam-workflow/                   # Vistas por paso del flujo guiado
+│       ├── StepConfiguracion.jsx
+│       ├── StepIngresoRespuestas.jsx
+│       ├── StepReporteFinal.jsx
+│       └── StepRevision.jsx
+├── hooks/                               # Hooks de estado y comportamiento de dominio
+│   ├── useExamWorkflow.js
+│   └── useReportes.js
+├── services/                            # Integraciones externas y persistencia
+│   ├── aiService.js                     # Anthropic messages API
+│   ├── exportService.js                 # Exportación PDF/CSV
+│   ├── ocrService.js                    # OCR con Tesseract
+│   └── storageService.js                # localStorage (API key, decisión final, reportes)
+├── utils/
+│   └── examUtils.js                     # Helpers puros: parseo, sanitización, CSV, mapeo PUCMM
+├── main.jsx
+└── styles.css
+```
+
 ## Flujo implementado
 
 1. Configuración del examen (materia, grupo, fecha, estudiante, total de preguntas y clave).
@@ -51,7 +79,7 @@ Cada reporte individual guardado en historial incluye:
 
 ## Integración de IA
 
-- Se realiza `fetch` directo a `https://api.anthropic.com/v1/messages`.
+- Se realiza `fetch` directo a `https://api.anthropic.com/v1/messages` desde `src/services/aiService.js`.
 - El prompt interno exige salida JSON con:
   - `puntuacion_sugerida`
   - `justificacion_breve`
