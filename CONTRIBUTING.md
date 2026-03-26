@@ -72,7 +72,7 @@ Toda PR debe incluir:
 1. **Descripción funcional** del cambio (qué problema resuelve y cómo).
 2. **Alcance técnico** (archivos/módulos impactados).
 3. **Pruebas ejecutadas**:
-   - Al menos `npm run lint`, `npm run test` y `npm run build`.
+   - Al menos `npm run lint`, `npm run test`, `npm run build` y `npm run test:e2e`.
    - Si aplica, validación manual del flujo afectado en `npm run dev`.
 4. **Documentación actualizada** cuando corresponda.
 
@@ -96,6 +96,7 @@ npm install
 npm run lint
 npm run test
 npm run build
+npm run test:e2e
 ```
 
 Para desarrollo guiado por pruebas:
@@ -113,5 +114,26 @@ npm ci
 npm run lint
 npm run test
 npm run build
+npm run test:e2e
 ```
 
+
+
+## Pruebas E2E
+
+La suite E2E usa Playwright en la carpeta `e2e/` con mocks determinísticos de backend para IA y reportes.
+
+Comandos:
+
+```bash
+npm run build
+npm run test:e2e
+```
+
+Para depurar localmente:
+
+```bash
+npm run test:e2e:ui
+```
+
+En CI (`.github/workflows/ci.yml`), el job E2E corre después de `lint` y de tests unit/integration.

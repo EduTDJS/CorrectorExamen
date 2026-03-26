@@ -30,6 +30,8 @@ Consulta la guía de contribución en [CONTRIBUTING.md](CONTRIBUTING.md).
 - `npm run test` ejecuta la suite de pruebas con Vitest en modo CI.
 - `npm run test:watch` ejecuta pruebas en modo observación local.
 - `npm run format` aplica formateo con Prettier.
+- `npm run test:e2e` ejecuta pruebas end-to-end con Playwright sobre build local.
+- `npm run test:e2e:ui` abre el runner UI de Playwright para depuración local.
 
 ## Calidad local y CI
 
@@ -39,6 +41,7 @@ Flujo recomendado antes de abrir PR:
 2. `npm run lint`
 3. `npm run test`
 4. `npm run build`
+5. `npm run test:e2e`
 
 ## Mapa de módulos
 
@@ -178,3 +181,41 @@ Ejemplo con OpenAI:
 ```bash
 AI_PROVIDER=openai OPENAI_API_KEY=tu_key OPENAI_MODEL=gpt-4o-mini INTERNAL_AUTH_TOKEN=token_interno_seguro npm run dev:api
 ```
+
+
+## Pruebas E2E (Playwright)
+
+La carpeta `e2e/` contiene el caso feliz completo del flujo:
+
+1. Configuración del examen.
+2. Ingreso de respuestas.
+3. Solicitud de sugerencia IA (mock backend).
+4. Ajuste de decisión final.
+5. Guardado de reporte.
+6. Verificación de aparición en historial.
+
+Para evitar dependencia de proveedores reales, las pruebas interceptan:
+
+- `GET /api/calificacion/proveedor`
+- `POST /api/calificacion/sugerir`
+- `GET/POST /api/reportes`
+
+con fixtures determinísticos ubicados en `e2e/fixtures/mockData.js`.
+
+### Ejecución local E2E
+
+```bash
+npm install
+npm run build
+npm run test:e2e
+```
+
+### Ejecución en pipeline
+
+El workflow `.github/workflows/ci.yml` ejecuta en orden:
+
+1. `lint`
+2. tests unit/integration (`npm run test`)
+3. E2E (`npm run test:e2e`)
+
+El job E2E instala Chromium vía Playwright y publica el reporte HTML como artifact.
