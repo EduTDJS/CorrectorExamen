@@ -1,4 +1,5 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -27,10 +28,26 @@ const restoreEnv = () => {
   process.env = { ...ORIGINAL_ENV };
 };
 
+const buildSessionToken = ({
+  sub = 'u-docente-1',
+  role = 'docente',
+  institution = 'Instituto Central',
+  sessionId = 'session-123',
+  exp = Math.floor(Date.now() / 1000) + 60 * 60,
+  secret = 'session-secret-test'
+} = {}) => {
+  const payload = { sub, role, institution, sessionId, exp };
+  const payloadEncoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signedContent = `v1.${payloadEncoded}`;
+  const signature = crypto.createHmac('sha256', secret).update(signedContent).digest('base64url');
+  return `${signedContent}.${signature}`;
+};
+
 const loadServer = async ({
   provider = 'anthropic',
   timeoutMs = 20000,
   internalToken = 'test-internal-token',
+  sessionSecret = 'session-secret-test',
   anthropicKey = 'anthropic-key',
   openAiKey = 'openai-key'
 } = {}) => {
@@ -39,6 +56,7 @@ const loadServer = async ({
   process.env.AI_REQUEST_TIMEOUT_MS = String(timeoutMs);
   process.env.INTERNAL_AUTH_TOKEN = internalToken;
   process.env.INTERNAL_AUTH_HEADER = 'x-internal-token';
+  process.env.SESSION_TOKEN_SECRET = sessionSecret;
   process.env.REPORTS_DB_FILE = path.join(tempDir, 'reports-db.json');
 
   if (provider === 'anthropic') {
@@ -67,13 +85,22 @@ const loadServer = async ({
   };
 };
 
-const apiRequest = ({ baseUrl, path: requestPath, method = 'GET', body, token = 'test-internal-token', headers = {} }) => new Promise((resolve, reject) => {
+const apiRequest = ({
+  baseUrl,
+  path: requestPath,
+  method = 'GET',
+  body,
+  token = 'test-internal-token',
+  authToken = buildSessionToken(),
+  headers = {}
+}) => new Promise((resolve, reject) => {
   const url = new URL(requestPath, baseUrl);
   const req = http.request(url, {
     method,
     headers: {
       'content-type': 'application/json',
       'x-internal-token': token,
+      authorization: `Bearer ${authToken}`,
       ...headers
     }
   }, (res) => {
@@ -218,6 +245,94 @@ describe('backend/server API', () => {
 
       expect(result.status).toBe(400);
       expect(result.json.error.code).toBe('payload_validation_error');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('devuelve 401 cuando falta token de sesión', async () => {
+    const app = await loadServer({ provider: 'openai' });
+
+    try {
+      const result = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        headers: { authorization: '' }
+      });
+
+      expect(result.status).toBe(401);
+      expect(result.json.error.code).toBe('auth_unauthorized');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('devuelve 403 cuando el rol no tiene permiso para exportar', async () => {
+    const app = await loadServer({ provider: 'openai' });
+    const docenteToken = buildSessionToken({ role: 'docente' });
+
+    try {
+      const created = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        authToken: docenteToken,
+        body: {
+          examen: { materia: 'Contabilidad', grupo: 'A', fecha: '2026-03-20', totalPreguntas: 10, claveRespuestas: 'ABCD' },
+          estudiante: { nombre: 'Ana', matricula: 'A1' },
+          respuestas: { lista: ['A', 'B'], texto: 'AB' },
+          puntuacionPorPregunta: [],
+          justificacionesIA: [],
+          calificacionFinal: { notaSobre100: 80, letra: 'B', justificacionDocente: 'Bien' }
+        }
+      });
+      expect(created.status).toBe(201);
+
+      const correctorToken = buildSessionToken({ role: 'corrector', sub: 'u-corrector-1', sessionId: 'session-999' });
+      const exported = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/reportes/${created.json.id}/export`,
+        authToken: correctorToken
+      });
+
+      expect(exported.status).toBe(403);
+      expect(exported.json.error.code).toBe('auth_forbidden');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('permite exportar cuando el rol tiene permiso', async () => {
+    const app = await loadServer({ provider: 'openai' });
+    const docenteToken = buildSessionToken({ role: 'docente' });
+
+    try {
+      const created = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        authToken: docenteToken,
+        body: {
+          examen: { materia: 'Contabilidad', grupo: 'A', fecha: '2026-03-20', totalPreguntas: 10, claveRespuestas: 'ABCD' },
+          estudiante: { nombre: 'Ana', matricula: 'A1' },
+          respuestas: { lista: ['A', 'B'], texto: 'AB' },
+          puntuacionPorPregunta: [],
+          justificacionesIA: [],
+          calificacionFinal: { notaSobre100: 80, letra: 'B', justificacionDocente: 'Bien' }
+        }
+      });
+      expect(created.status).toBe(201);
+
+      const auditorToken = buildSessionToken({ role: 'auditor', sub: 'u-auditor-1', sessionId: 'session-444' });
+      const exported = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/reportes/${created.json.id}/export`,
+        authToken: auditorToken
+      });
+
+      expect(exported.status).toBe(200);
+      expect(exported.json.data.id).toBe(created.json.id);
+      expect(exported.json.export.format).toBe('json');
     } finally {
       await app.close();
     }

@@ -6,6 +6,8 @@ import {
   listReports,
   updateReport
 } from './repositories/reportRepository.js';
+import { AuthError, authenticate } from './middleware/auth.js';
+import { AuthorizationError, authorize } from './middleware/authorize.js';
 
 const PORT = Number(process.env.PORT || 8787);
 const REQUEST_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS || 20000);
@@ -72,7 +74,20 @@ const safePayloadMetadata = (payload = {}) => {
   };
 };
 
-const logEvent = ({ requestId, event, method, path, status, durationMs, provider, model, errorCode, payloadMetadata }) => {
+const logEvent = ({
+  requestId,
+  event,
+  method,
+  path,
+  status,
+  durationMs,
+  provider,
+  model,
+  errorCode,
+  payloadMetadata,
+  actor,
+  resource
+}) => {
   const entry = {
     timestamp: new Date().toISOString(),
     level: errorCode ? 'error' : 'info',
@@ -99,6 +114,12 @@ const logEvent = ({ requestId, event, method, path, status, durationMs, provider
   }
   if (payloadMetadata) {
     entry.payloadMetadata = payloadMetadata;
+  }
+  if (actor) {
+    entry.actor = actor;
+  }
+  if (resource) {
+    entry.resource = resource;
   }
 
   process.stdout.write(`${JSON.stringify(entry)}\n`);
@@ -433,6 +454,36 @@ const validarPayloadReporte = (payload) => {
   return payload;
 };
 
+const runProtectedAction = async ({ req, res, requestId, action, resource, onAllowed }) => {
+  try {
+    authenticate(req);
+    authorize(req, action);
+    return await onAllowed();
+  } catch (error) {
+    const status = error instanceof AuthError || error instanceof AuthorizationError ? error.status : 500;
+    const code = error instanceof AuthError || error instanceof AuthorizationError ? error.code : API_ERRORS.BAD_REQUEST;
+    const actor = req.user ? { userId: req.user.userId, role: req.user.role } : undefined;
+    logEvent({
+      requestId,
+      event: status === 401 ? 'authentication_failed' : 'authorization_denied',
+      method: req.method,
+      path: req.url || '/',
+      status,
+      errorCode: code,
+      actor,
+      resource
+    });
+    sendJson(res, status, {
+      error: {
+        message: error?.message || 'No autorizado.',
+        code,
+        requestId
+      }
+    }, { requestId });
+    return undefined;
+  }
+};
+
 const handler = async (req, res) => {
   const requestId = getOrCreateRequestId(req);
   const startedAt = Date.now();
@@ -464,6 +515,17 @@ const handler = async (req, res) => {
 
   if (req.method === 'POST' && req.url === '/api/calificacion/sugerir') {
     try {
+      const accessResult = await runProtectedAction({
+        req,
+        res,
+        requestId,
+        action: 'correct_exam',
+        resource: '/api/calificacion/sugerir',
+        onAllowed: async () => true
+      });
+      if (!accessResult) {
+        return;
+      }
       assertInternalToken(req);
       assertRateLimit(req);
       const payload = await parseBody(req);
@@ -555,6 +617,18 @@ const handler = async (req, res) => {
   }
 
   if (req.method === 'GET' && req.url === '/api/reportes') {
+    const accessResult = await runProtectedAction({
+      req,
+      res,
+      requestId,
+      action: 'view_history',
+      resource: '/api/reportes',
+      onAllowed: async () => true
+    });
+    if (!accessResult) {
+      return;
+    }
+
     try {
       const reportes = await listReports();
       sendJson(res, 200, { data: reportes }, { requestId });
@@ -570,7 +644,52 @@ const handler = async (req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && req.url?.startsWith('/api/reportes/') && req.url?.endsWith('/export')) {
+    const accessResult = await runProtectedAction({
+      req,
+      res,
+      requestId,
+      action: 'export_report',
+      resource: '/api/reportes/:id/export',
+      onAllowed: async () => true
+    });
+    if (!accessResult) {
+      return;
+    }
+
+    const reportId = decodeURIComponent(req.url.replace('/api/reportes/', '').replace('/export', '').trim());
+    const reporte = await getReportById(reportId);
+    if (!reporte) {
+      sendJson(res, 404, {
+        error: {
+          message: 'Reporte no encontrado.',
+          code: API_ERRORS.NOT_FOUND,
+          requestId
+        }
+      }, { requestId });
+      return;
+    }
+
+    sendJson(res, 200, {
+      data: reporte,
+      export: { format: 'json', generatedAt: new Date().toISOString() }
+    }, { requestId });
+    return;
+  }
+
   if (req.method === 'GET' && req.url?.startsWith('/api/reportes/')) {
+    const accessResult = await runProtectedAction({
+      req,
+      res,
+      requestId,
+      action: 'view_history',
+      resource: '/api/reportes/:id',
+      onAllowed: async () => true
+    });
+    if (!accessResult) {
+      return;
+    }
+
     const reportId = decodeURIComponent(req.url.replace('/api/reportes/', '').trim());
     const reporte = await getReportById(reportId);
 
@@ -590,6 +709,18 @@ const handler = async (req, res) => {
   }
 
   if (req.method === 'POST' && req.url === '/api/reportes') {
+    const accessResult = await runProtectedAction({
+      req,
+      res,
+      requestId,
+      action: 'create_exam',
+      resource: '/api/reportes',
+      onAllowed: async () => true
+    });
+    if (!accessResult) {
+      return;
+    }
+
     try {
       const payload = validarPayloadReporte(await parseBody(req));
       const actor = String(req.headers['x-actor'] || 'frontend_tecnico').trim() || 'frontend_tecnico';
