@@ -120,3 +120,15 @@ CorrectorExamen es una aplicación frontend orientada a **configurar, corregir y
 - `exportarGrupoCSV(reportesFiltrados: Reporte[]): void`
 
 **Comportamiento**: generan archivos y disparan descarga en navegador (no devuelven payload de datos).
+
+## ADRs relacionadas
+
+Las decisiones estructurales vigentes de esta arquitectura están documentadas en:
+
+- [ADR 0001: OCR en cliente con Tesseract](adr/0001-ocr-en-cliente-con-tesseract.md)
+- [ADR 0002: Integración IA desde frontend](adr/0002-integracion-ia-desde-frontend.md)
+- [ADR 0003: Persistencia en localStorage](adr/0003-persistencia-localstorage.md)
+- [ADR 0004: Exportación PDF/CSV en cliente](adr/0004-exportacion-pdf-csv-en-cliente.md)
+
+Para nuevas decisiones estructurales, crear un ADR siguiendo la guía en [docs/adr/README.md](adr/README.md).
+

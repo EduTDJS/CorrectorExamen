@@ -55,6 +55,16 @@ Límites de responsabilidad:
 - Mantén funciones puras en `utils` cuando no dependan de estado React ni de IO.
 - Si una funcionalidad cruza múltiples capas, documenta la decisión en `docs/`.
 
+## Regla de ADR para decisiones estructurales
+
+Toda decisión estructural nueva (arquitectura, integraciones clave, persistencia, seguridad, exportación o cambios de límites entre módulos) **requiere un ADR** en `docs/adr/` antes de cerrar la PR.
+
+Criterios mínimos:
+
+- Crear un archivo con numeración incremental (`000X-...`).
+- Incluir secciones: **Contexto**, **Decisión** y **Consecuencias**.
+- Referenciar el ADR en la documentación relevante (`README.md` y/o `docs/architecture.md` cuando aplique).
+
 ## Política de Pull Request (PR)
 
 Toda PR debe incluir:
