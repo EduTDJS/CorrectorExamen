@@ -5,6 +5,7 @@ CalificaYa es una aplicación web para configurar, corregir y exportar resultado
 ## Arquitectura
 
 - [Arquitectura del sistema](docs/architecture.md)
+- [UX de importación de respuestas](docs/ux-importacion-respuestas.md)
 - [Modelo de datos](docs/data-model.md)
 - [Seguridad](docs/security.md)
 - [ADRs (Architecture Decision Records)](docs/adr/README.md)
@@ -68,6 +69,7 @@ src/
 ├── services/
 │   ├── aiService.js                     # Cliente del endpoint interno /api/calificacion/sugerir
 │   ├── exportService.js                 # Exportación PDF/CSV
+│   ├── importService.js                 # Importación y validación CSV/Excel
 │   ├── ocrService.js                    # OCR con Tesseract
 │   └── storageService.js                # localStorage (decisión final, reportes)
 ├── utils/
@@ -79,12 +81,21 @@ src/
 ## Flujo implementado
 
 1. Configuración del examen (materia, grupo, fecha, total de preguntas, clave).
-2. Ingreso de respuestas por transcripción manual o carga de foto/escaneo.
+2. Ingreso de respuestas por transcripción manual, carga de lote CSV/Excel o foto/escaneo.
 3. Procesamiento OCR en cliente con Tesseract.js y parser por número de pregunta.
 4. Revisión editable de respuestas en tabla antes de calificar.
 5. Revisión de calificaciones (aciertos, errores, porcentaje y puntaje) con desglose por pregunta basado en evidencia (clave, respuesta, estado, confianza OCR y fuente).
 6. Sugerencia de calificación con proveedor de IA configurable (`anthropic` u `openai`) usando prompt interno en español con criterios contables.
 7. Reporte final con decisión final editable de la profesora y exportación simulada.
+
+## Contrato de importación (CSV/Excel)
+
+- Campos obligatorios por fila: `estudianteNombre`, `estudianteMatricula`, `respuestas`.
+- Normalización de respuestas: mayúsculas y tolerancia OCR (`4→A`, `8→B`, `(→C`, `0/O/Q→D`).
+- Política de duplicados: para matrícula repetida en el mismo archivo se conserva la última fila válida.
+- Límite de archivo: **2MB**.
+- Máximo de filas por importación: **200**.
+- El paso de ingreso permite previsualizar filas válidas, revisar errores por registro y cargar una fila al formulario para corrección manual antes de guardar.
 
 ## Contrato de desglose por pregunta
 

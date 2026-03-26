@@ -38,6 +38,19 @@ export const agruparReportesPorMateria = (reportes) => {
     .sort((a, b) => a.materia.localeCompare(b.materia, 'es', { sensitivity: 'base' }));
 };
 
+export const detectarMatriculasDuplicadas = (reportes, matriculas = []) => {
+  const registradas = new Set(
+    (Array.isArray(reportes) ? reportes : [])
+      .map((reporte) => String(reporte?.estudiante?.matricula || '').trim())
+      .filter(Boolean)
+  );
+
+  return (Array.isArray(matriculas) ? matriculas : []).filter((matricula, indice, arr) => {
+    const limpia = String(matricula || '').trim();
+    return limpia && registradas.has(limpia) && arr.indexOf(matricula) === indice;
+  });
+};
+
 export const useReportes = () => {
   const [reportes, setReportes] = useState([]);
   const [filtrosHistorial, setFiltrosHistorial] = useState({ materia: '', grupo: '', fecha: '' });

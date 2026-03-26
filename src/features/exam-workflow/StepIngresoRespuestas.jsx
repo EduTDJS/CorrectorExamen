@@ -14,7 +14,10 @@ function StepIngresoRespuestas({
   respuestasLista,
   actualizarRespuesta,
   letrasValidas,
-  umbralBajaConfianza
+  umbralBajaConfianza,
+  importacionEstado,
+  onArchivoImportacion,
+  onAplicarFilaImportada
 }) {
   const esDispositivoMovil = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent);
 
@@ -29,10 +32,67 @@ function StepIngresoRespuestas({
       </label>
 
       {datos.modoIngreso === 'transcripcion' ? (
-        <label>Respuestas del estudiante (A/B/C/D)
-          <textarea rows="4" value={textoManual} onChange={(e) => setRespuestasLista(convertirTextoALista(e.target.value, totalPreguntasNumero))} placeholder="Ejemplo: ABCCDA" />
-          {errores.respuestasEstudiante && (<span className="error">{errores.respuestasEstudiante}</span>)}
-        </label>
+        <>
+          <label>Respuestas del estudiante (A/B/C/D)
+            <textarea rows="4" value={textoManual} onChange={(e) => setRespuestasLista(convertirTextoALista(e.target.value, totalPreguntasNumero))} placeholder="Ejemplo: ABCCDA" />
+            {errores.respuestasEstudiante && (<span className="error">{errores.respuestasEstudiante}</span>)}
+          </label>
+
+          <div className="importacion-bloque">
+            <h3>Importar lote (CSV/Excel)</h3>
+            <p className="detalle">Campos requeridos: estudianteNombre, estudianteMatricula, respuestas.</p>
+            <label>
+              Archivo de importación
+              <input
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={(e) => onArchivoImportacion(e.target.files?.[0] || null)}
+              />
+            </label>
+            {importacionEstado.error && <p className="error">{importacionEstado.error}</p>}
+            {importacionEstado.resumen && (
+              <p className="detalle">
+                Leídas: {importacionEstado.resumen.totalLeidas} · Válidas: {importacionEstado.resumen.totalValidas}
+                {' '}· Errores: {importacionEstado.resumen.totalErrores} · Duplicados: {importacionEstado.resumen.totalDuplicados}
+              </p>
+            )}
+            {importacionEstado.duplicadosEnHistorial.length > 0 && (
+              <p className="detalle baja-confianza-resumen">
+                Matrículas ya existentes en historial: {importacionEstado.duplicadosEnHistorial.join(', ')}
+              </p>
+            )}
+
+            {importacionEstado.filas.length > 0 && (
+              <table className="tabla-respuestas">
+                <thead><tr><th>Fila</th><th>Matrícula</th><th>Nombre</th><th>Respuestas</th><th /></tr></thead>
+                <tbody>
+                  {importacionEstado.filas.slice(0, 15).map((fila) => (
+                    <tr key={`import-row-${fila.fila}`}>
+                      <td>{fila.fila}</td>
+                      <td>{fila.estudianteMatricula}</td>
+                      <td>{fila.estudianteNombre}</td>
+                      <td>{fila.respuestasTexto}</td>
+                      <td><button type="button" onClick={() => onAplicarFilaImportada(fila)}>Cargar en formulario</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            {importacionEstado.errores.length > 0 && (
+              <>
+                <h4>Errores por registro</h4>
+                <ul className="error-lista">
+                  {importacionEstado.errores.slice(0, 20).map((item) => (
+                    <li key={`err-${item.fila}-${item.matricula}`}>
+                      Fila {item.fila} ({item.matricula || 'sin matrícula'}): {item.errores.join(' | ')}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        </>
       ) : (
         <>
           <label>

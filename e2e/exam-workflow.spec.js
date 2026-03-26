@@ -67,4 +67,49 @@ test.describe('Flujo E2E de corrección de examen', () => {
     await expect(page.getByRole('cell', { name: 'Ana Pérez' })).toBeVisible();
     await expect(page.getByRole('cell', { name: '2026001' })).toBeVisible();
   });
+
+  test('importa CSV y permite cargar fila para edición manual', async ({ page }) => {
+    await page.route('**/api/calificacion/proveedor', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(proveedorMock)
+      });
+    });
+
+    await page.route('**/api/reportes', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: [] })
+      });
+    });
+
+    await page.goto('/');
+
+    await page.getByLabel('Materia').fill('Química');
+    await page.getByLabel('Grupo').fill('Q1');
+    await page.getByLabel('Fecha').fill('2026-03-26');
+    await page.getByLabel('Nombre estudiante').fill('Temporal');
+    await page.getByLabel('Matrícula estudiante').fill('0000');
+    await page.getByLabel('Total de preguntas').fill('4');
+    await page.getByLabel('Clave de respuestas (solo A/B/C/D)').fill('ABCD');
+    await page.getByRole('button', { name: 'Siguiente' }).click();
+
+    const csvContent = [
+      'estudianteNombre,estudianteMatricula,respuestas',
+      'Laura,2026111,ABCD',
+      'Registro Malo,2026222,AZCD'
+    ].join('\n');
+
+    await page.getByLabel('Archivo de importación').setInputFiles({
+      name: 'lote.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from(csvContent)
+    });
+
+    await expect(page.getByText('Leídas: 2 · Válidas: 1 · Errores: 1 · Duplicados: 0')).toBeVisible();
+    await page.getByRole('button', { name: 'Cargar en formulario' }).click();
+    await expect(page.getByLabel('Respuestas del estudiante (A/B/C/D)')).toHaveValue('ABCD');
+  });
 });
