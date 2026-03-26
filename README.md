@@ -7,6 +7,7 @@ Frontend web para configurar, corregir y exportar resultados de exámenes.
 - [Arquitectura del sistema](docs/architecture.md)
 - [Modelo de datos](docs/data-model.md)
 - [Seguridad](docs/security.md)
+- [ADRs (Architecture Decision Records)](docs/adr/README.md)
 
 ## Cómo contribuir
 
