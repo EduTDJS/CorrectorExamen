@@ -28,8 +28,9 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
 │Servicios ext. │              │Persistencia   │           │Exportación    │
 │ocrService     │              │storageService │           │exportService  │
 │               │              │+sessionService│           │               │
-│(Tesseract.js) │              │(API + fallback│           │(jsPDF + CSV)  │
-│               │              │localStorage)  │           │               │
+│(Tesseract.js) │              │(API primario +│           │(jsPDF + CSV)  │
+│               │              │fallback local │           │               │
+│               │              │controlado)    │           │               │
 └──────┬────────┘              └──────┬────────┘           └──────┬────────┘
        │                               │                           │
        ▼                               ▼                           ▼
@@ -87,7 +88,15 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
 3. `backend/server.js` recibe `POST /api/reportes` y valida payload mínimo.
 4. `reportRepository` crea o actualiza el reporte en `reports`.
 5. El backend registra `report_created` o `report_updated` en `audit_logs` con actor técnico y timestamp.
-6. El frontend refresca estado local en memoria y guarda copia local como fallback.
+6. El frontend refresca estado local en memoria.
+7. Solo si el backend no está disponible, `useReportes` activa fallback controlado con `localStorage`.
+
+### Política de persistencia frontend (backend-first)
+
+- La persistencia **primaria** de reportes es backend (`GET/POST /api/reportes`).
+- `localStorage` se usa únicamente como fallback controlado (offline/desarrollo o caída de backend).
+- Cuando el backend responde correctamente, el estado de reportes se hidrata **exclusivamente** desde API y no desde `localStorage`.
+- La escritura a `localStorage` solo ocurre cuando `useReportes` detecta explícitamente `usaBackend === false`.
 
 ## Contratos de entrada/salida
 

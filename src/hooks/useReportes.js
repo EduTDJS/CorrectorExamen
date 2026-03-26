@@ -39,9 +39,9 @@ export const agruparReportesPorMateria = (reportes) => {
 };
 
 export const useReportes = () => {
-  const [reportes, setReportes] = useState(() => leerReportes());
+  const [reportes, setReportes] = useState([]);
   const [filtrosHistorial, setFiltrosHistorial] = useState({ materia: '', grupo: '', fecha: '' });
-  const [usaBackend, setUsaBackend] = useState(false);
+  const [usaBackend, setUsaBackend] = useState(null);
   const [errorSesion, setErrorSesion] = useState('');
 
   useEffect(() => {
@@ -54,7 +54,10 @@ export const useReportes = () => {
         setErrorSesion('');
       })
       .catch((error) => {
+        if (cancelado) return;
+
         setUsaBackend(false);
+        setReportes(leerReportes());
 
         if (error?.status === 401 || error?.status === 403) {
           setErrorSesion(error.message);
@@ -70,11 +73,13 @@ export const useReportes = () => {
   }, []);
 
   useEffect(() => {
-    guardarReportes(reportes);
-  }, [reportes]);
+    if (usaBackend === false) {
+      guardarReportes(reportes);
+    }
+  }, [reportes, usaBackend]);
 
   const guardarReporte = async (reporte) => {
-    if (!usaBackend) {
+    if (usaBackend === false) {
       setReportes((previo) => {
         const existe = previo.some((item) => item.id === reporte.id);
         if (!existe) return [reporte, ...previo];

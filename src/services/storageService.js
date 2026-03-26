@@ -264,7 +264,11 @@ export const guardarDecisionFinal = (decisionFinal) => {
   }));
 };
 
-export const leerReportes = () => {
+// =========================
+// Fallback local (offline / desarrollo)
+// =========================
+
+export const leerReportesLocalFallback = () => {
   const crudo = window.localStorage.getItem(STORAGE_REPORTES);
   if (!crudo) return [];
 
@@ -280,13 +284,17 @@ export const leerReportes = () => {
   }
 };
 
-export const guardarReportes = (reportes) => {
+export const guardarReportesLocalFallback = (reportes) => {
   const data = (Array.isArray(reportes) ? reportes : []).map((reporte) => repararReporte(reporte)).filter(Boolean);
   window.localStorage.setItem(STORAGE_REPORTES, JSON.stringify({
     schemaVersion: SCHEMA_VERSION_REPORTES,
     data
   }));
 };
+
+// Alias de compatibilidad para consumidores existentes.
+export const leerReportes = leerReportesLocalFallback;
+export const guardarReportes = guardarReportesLocalFallback;
 
 
 class StorageServiceApiError extends Error {
@@ -313,6 +321,10 @@ const construirMensajeErrorApi = (status, fallback = 'No se pudo completar la op
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
 const construirUrlApi = (path) => `${API_BASE_URL}${path}`;
+
+// =========================
+// Persistencia backend (producción)
+// =========================
 
 export const listarReportesApi = async () => {
   const response = await fetch(construirUrlApi('/api/reportes'), {
