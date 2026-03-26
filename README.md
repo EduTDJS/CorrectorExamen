@@ -8,6 +8,10 @@ Frontend web para configurar, corregir y exportar resultados de exámenes.
 - [Modelo de datos](docs/data-model.md)
 - [Seguridad](docs/security.md)
 
+## Cómo contribuir
+
+Consulta la guía de contribución en [CONTRIBUTING.md](CONTRIBUTING.md) para ramas, commits, política de PR y checklist obligatoria.
+
 ## Requisitos
 
 - Node.js 18+
