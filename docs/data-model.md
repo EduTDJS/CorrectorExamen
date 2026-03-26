@@ -136,6 +136,11 @@ La persistencia primaria ocurre en backend con SQLite (`backend/db/data.sqlite`)
     {
       "id": "uuid",
       "creadoEn": "ISO-8601",
+      "ownership": {
+        "tenantId": "string",
+        "userId": "string",
+        "role": "docente|coordinador|admin|corrector|auditor"
+      },
       "examen": { "...": "ver esquema examen" },
       "organizacion": { "...": "ver esquema organizacion" },
       "estudiante": { "...": "ver esquema estudiante" },
@@ -154,6 +159,8 @@ La persistencia primaria ocurre en backend con SQLite (`backend/db/data.sqlite`)
   ]
 }
 ```
+
+- `ownership` define el ámbito de acceso del reporte para aplicar aislamiento por tenant y, cuando corresponda, por usuario.
 
 Compatibilidad y resiliencia (fallback local en desarrollo):
 
@@ -183,7 +190,7 @@ Compatibilidad y resiliencia (fallback local en desarrollo):
   "action": "report_created | report_updated",
   "actor": "string",
   "created_at": "ISO-8601",
-  "metadata_json": "{...}"
+  "metadata_json": "{\"source\":\"api\",\"id\":\"report_*\",\"tenantId\":\"tenant-*\",\"sessionId\":\"session-*\"}"
 }
 ```
 
