@@ -1,20 +1,9 @@
-export const STORAGE_API_KEY = 'corrector_anthropic_api_key';
 export const STORAGE_DECISION_FINAL = 'corrector_decision_final';
 export const STORAGE_REPORTES = 'corrector_historial_reportes_v1';
 
 const decisionFinalInicial = {
   puntuacion: '',
   justificacion: ''
-};
-
-export const leerApiKey = () => window.localStorage.getItem(STORAGE_API_KEY) || '';
-
-export const guardarApiKey = (apiKey) => {
-  window.localStorage.setItem(STORAGE_API_KEY, String(apiKey || '').trim());
-};
-
-export const eliminarApiKey = () => {
-  window.localStorage.removeItem(STORAGE_API_KEY);
 };
 
 export const leerDecisionFinal = () => {
