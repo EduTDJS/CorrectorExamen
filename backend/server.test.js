@@ -45,6 +45,10 @@ const buildSessionToken = ({
 
 const loadServer = async ({
   provider = 'anthropic',
+  secondaryProvider = '',
+  fallbackEnabled = true,
+  fallbackRetries = 0,
+  fallbackErrorCodes = 'provider_timeout,provider_upstream_error',
   timeoutMs = 20000,
   internalToken = 'test-internal-token',
   sessionSecret = 'session-secret-test',
@@ -53,20 +57,24 @@ const loadServer = async ({
 } = {}) => {
   process.env.NODE_ENV = 'test';
   process.env.AI_PROVIDER = provider;
+  process.env.AI_PROVIDER_SECONDARY = secondaryProvider;
+  process.env.AI_FALLBACK_ENABLED = String(fallbackEnabled);
+  process.env.AI_FALLBACK_RETRIES = String(fallbackRetries);
+  process.env.AI_FALLBACK_ERROR_CODES = fallbackErrorCodes;
+  process.env.AI_CIRCUIT_FAILURE_THRESHOLD = '2';
+  process.env.AI_CIRCUIT_OPEN_MS = '1000';
   process.env.AI_REQUEST_TIMEOUT_MS = String(timeoutMs);
   process.env.INTERNAL_AUTH_TOKEN = internalToken;
   process.env.INTERNAL_AUTH_HEADER = 'x-internal-token';
   process.env.SESSION_TOKEN_SECRET = sessionSecret;
   process.env.REPORTS_DB_FILE = path.join(tempDir, 'reports-db.json');
 
-  if (provider === 'anthropic') {
+  if (provider === 'anthropic' || secondaryProvider === 'anthropic') {
     process.env.ANTHROPIC_API_KEY = anthropicKey;
-    delete process.env.OPENAI_API_KEY;
   }
 
-  if (provider === 'openai') {
+  if (provider === 'openai' || secondaryProvider === 'openai') {
     process.env.OPENAI_API_KEY = openAiKey;
-    delete process.env.ANTHROPIC_API_KEY;
   }
 
   vi.resetModules();
@@ -177,6 +185,65 @@ describe('backend/server API', () => {
 
       expect(result.status).toBe(200);
       expect(result.json).toMatchObject({ puntuacion: '88.00', proveedor: 'openai' });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('POST /api/calificacion/sugerir hace failover a secundario cuando falla primario', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(502, { error: { message: 'upstream fail' } }))
+      .mockResolvedValueOnce(jsonResponse(200, {
+        choices: [{ message: { content: '{"puntuacion_sugerida": 91, "justificacion_breve": "Fallback ok"}' } }]
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const logSpy = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+    const app = await loadServer({
+      provider: 'anthropic',
+      secondaryProvider: 'openai',
+      fallbackEnabled: true,
+      fallbackRetries: 0
+    });
+
+    try {
+      const result = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/calificacion/sugerir',
+        method: 'POST',
+        body: basePayload
+      });
+
+      expect(result.status).toBe(200);
+      expect(result.json.proveedor).toBe('openai');
+      const failoverLogged = logSpy.mock.calls.some(([line]) => String(line).includes('"event":"provider_failover"'));
+      expect(failoverLogged).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      await app.close();
+      logSpy.mockRestore();
+    }
+  });
+
+  it('POST /api/calificacion/sugerir devuelve error del primario si no hay secundario', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(503, { error: { message: 'service unavailable' } })));
+    const app = await loadServer({
+      provider: 'anthropic',
+      secondaryProvider: '',
+      fallbackEnabled: false,
+      fallbackRetries: 0
+    });
+
+    try {
+      const result = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/calificacion/sugerir',
+        method: 'POST',
+        body: basePayload
+      });
+
+      expect(result.status).toBe(503);
+      expect(result.json.error.provider).toBe('anthropic');
     } finally {
       await app.close();
     }

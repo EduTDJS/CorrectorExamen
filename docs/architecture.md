@@ -40,9 +40,9 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
        ▼
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ Backend Node (backend/server.js)                                          │
-│ POST /api/calificacion/sugerir -> selector por AI_PROVIDER                │
+│ POST /api/calificacion/sugerir -> providerOrchestrator (primario/sec.)    │
 │ POST /api/reportes + GET /api/reportes + GET /api/reportes/:id            │
-│ Provider strategy: Anthropic Messages | OpenAI Chat Completions           │
+│ Resiliencia: fallback + reintentos + circuit breaker por proveedor         │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -65,12 +65,11 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
 
 1. `StepRevision` dispara `sugerirCalificacionConIA`.
 2. `src/services/aiService.js` llama `POST /api/calificacion/sugerir`.
-3. `backend/server.js` valida payload (`datos`, `puntaje`) y construye prompt.
-4. El backend selecciona proveedor mediante `AI_PROVIDER`:
-   - `anthropic` → `https://api.anthropic.com/v1/messages`
-   - `openai` → `https://api.openai.com/v1/chat/completions`
-5. El backend normaliza la respuesta con `normalizarContrato(...)` y retorna un contrato estable.
-6. El frontend usa ese contrato para autocompletar la decisión final editable.
+3. `backend/server.js` valida payload (`datos`, `puntaje`) y delega en `backend/ai/providerOrchestrator.js`.
+4. El orquestador intenta proveedor primario (`AI_PROVIDER`) y puede conmutar a secundario (`AI_PROVIDER_SECONDARY`) según política.
+5. Cada proveedor tiene circuito propio (`closed`/`open`/`half_open`) con umbral y ventana temporal configurable.
+6. El backend retorna un contrato normalizado estable y reporta eventos de failover/circuito en logs estructurados.
+7. El frontend usa ese contrato para autocompletar la decisión final editable.
 
 ## Flujo de persistencia de reportes
 
@@ -107,8 +106,18 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
 - **Errores**
   - `400` payload inválido (`payload_validation_error`).
   - `500` configuración inválida o secretos faltantes (`provider_config_error`).
-  - `502` error de proveedor (`provider_upstream_error`/`provider_contract_error`).
+  - `502` error de proveedor (`provider_upstream_error`/`provider_contract_error`/`provider_circuit_open`).
   - `504` timeout hacia proveedor (`provider_timeout`).
+
+### Variables de entorno de resiliencia IA
+
+- `AI_PROVIDER`: proveedor primario (`anthropic` | `openai`).
+- `AI_PROVIDER_SECONDARY`: proveedor secundario opcional para failover.
+- `AI_FALLBACK_ENABLED`: habilita conmutación (`true` por defecto).
+- `AI_FALLBACK_RETRIES`: reintentos sobre proveedor primario antes de conmutar (default `1`).
+- `AI_FALLBACK_ERROR_CODES`: lista CSV de códigos que habilitan fallback (default: `provider_timeout,provider_upstream_error`).
+- `AI_CIRCUIT_FAILURE_THRESHOLD`: cantidad de fallos para abrir circuito (default `3`).
+- `AI_CIRCUIT_OPEN_MS`: ventana en ms de circuito abierto antes de pasar a medio-abierto (default `30000`).
 
 ## Ejecución local
 
@@ -131,3 +140,4 @@ Ejemplo con OpenAI:
 - [ADR 0005: Migración IA a backend y custodia de secretos](adr/0005-migracion-ia-a-backend.md)
 - [ADR 0006: Selección de proveedor IA por variable de entorno y contrato normalizado](adr/0006-ai-provider-env-y-contrato-normalizado.md)
 - [ADR 0007: Persistencia de reportes en backend con auditoría](adr/0007-persistencia-reportes-en-backend-con-auditoria.md)
+- [ADR 0009: Estrategia de resiliencia IA (fallback + circuit breaker)](adr/0009-resiliencia-ia-orquestador-fallback-circuit-breaker.md)
