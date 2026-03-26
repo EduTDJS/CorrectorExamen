@@ -130,6 +130,16 @@ La UI muestra errores claros en español para:
 6. Exportación individual (PDF/CSV) desde reporte guardado o snapshot actual, sin duplicar historial.
 7. Historial local de reportes con filtros.
 
+## Buenas prácticas de captura de fotos
+
+Para mejorar la precisión del OCR cuando se corrige por imagen:
+
+- **Iluminación uniforme:** usa luz frontal, evita contraluces y sombras sobre la hoja.
+- **Enfoque nítido:** espera que la cámara enfoque antes de disparar; si queda borrosa, repite la captura.
+- **Encuadre completo:** incluye la hoja entera en formato vertical, sin cortar márgenes ni números de pregunta.
+- **Resolución suficiente:** prefiere fotos de al menos 900x1200 píxeles para lectura estable.
+- **Evita panorámicas o recortes extremos:** el OCR funciona mejor cuando la hoja ocupa la mayor parte del encuadre.
+
 ## Variables de entorno de IA
 
 - `AI_PROVIDER` (opcional, default `anthropic`): proveedor activo (`anthropic` u `openai`).

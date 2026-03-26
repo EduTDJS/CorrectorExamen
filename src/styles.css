@@ -132,6 +132,23 @@ button[disabled] {
   width: 220px;
 }
 
+.ocr-ayuda {
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 10px;
+  padding: 0.65rem 0.85rem;
+}
+
+.ocr-ayuda ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.ocr-ayuda li {
+  margin: 0.2rem 0;
+  color: #374151;
+}
+
 .tabla-respuestas {
   width: 100%;
   border-collapse: collapse;
@@ -173,4 +190,9 @@ button[disabled] {
 
 .fila-baja-confianza td {
   border-left: 3px solid #f59e0b;
+}
+
+.baja-confianza-resumen {
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
 }
