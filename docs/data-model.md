@@ -127,7 +127,7 @@ La decisión final se guarda en `corrector_decision_final` con versión de esque
 
 ## Entidad de historial (`reporte` persistido en backend)
 
-La persistencia primaria ocurre en backend con la tabla lógica `reports` (campo `payload_json`), y fallback local opcional en `corrector_historial_reportes_v1` durante la migración gradual.
+La persistencia primaria ocurre en backend con SQLite (`backend/db/data.sqlite`) y la tabla lógica `reports` (campo `payload_json`). El fallback JSON local del backend queda permitido **solo** para desarrollo local con `REPORTS_STORAGE_DEV_FALLBACK=true`.
 
 ```json
 {
@@ -155,12 +155,13 @@ La persistencia primaria ocurre en backend con la tabla lógica `reports` (campo
 }
 ```
 
-Compatibilidad y resiliencia (fallback local):
+Compatibilidad y resiliencia (fallback local en desarrollo):
 
 - `schemaVersion: 1`: arreglo legacy sin envoltura (se migra automáticamente a v2).
 - `schemaVersion: 2`: envoltura versionada sin `organizacion` (se migra automáticamente a v3 reconstruyendo carpetas por materia normalizada).
 - `schemaVersion: 3`: reportes previos sin `desglose` explícito por pregunta (se migra automáticamente a v4 normalizando el contrato).
 - Los registros corruptos o incompletos se aíslan durante la lectura: se reparan cuando es posible o se descartan.
+- En producción no se usa fallback JSON; el backend opera únicamente sobre SQLite + migraciones SQL.
 
 ## Tabla lógica `reports` (backend)
 
@@ -185,6 +186,11 @@ Compatibilidad y resiliencia (fallback local):
   "metadata_json": "{...}"
 }
 ```
+
+### Garantía transaccional
+
+- `createReport` y `updateReport` escriben `reports` y `audit_logs` en la misma transacción SQL (`BEGIN IMMEDIATE ... COMMIT/ROLLBACK`) para mantener atomicidad.
+- Las migraciones se aplican con `backend/db/schema.sql` al inicializar el adaptador SQL o mediante script dedicado (`npm run migrate:db`).
 
 ## Relación entre entidades
 
