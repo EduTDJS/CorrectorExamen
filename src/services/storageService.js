@@ -1,7 +1,9 @@
+import { normalizarDesglosePregunta } from '../utils/questionBreakdown';
+
 export const STORAGE_DECISION_FINAL = 'corrector_decision_final';
 export const STORAGE_REPORTES = 'corrector_historial_reportes_v1';
 
-const SCHEMA_VERSION_REPORTES = 3;
+const SCHEMA_VERSION_REPORTES = 4;
 const SCHEMA_VERSION_DECISION_FINAL = 2;
 
 const decisionFinalInicial = {
@@ -126,12 +128,27 @@ const repararReporte = (reporte) => {
     return null;
   }
 
+  const puntuacionPorPregunta = base.puntuacionPorPregunta
+    .map((pregunta, indice) => {
+      if (!esObjeto(pregunta)) return null;
+      return {
+        ...pregunta,
+        numero: typeof pregunta.numero === 'number' ? pregunta.numero : indice + 1,
+        desglose: normalizarDesglosePregunta(pregunta.desglose || {})
+      };
+    })
+    .filter(Boolean);
+
   const justificacionesIA = base.justificacionesIA
     || base.puntuacionPorPregunta
       .filter((pregunta) => esObjeto(pregunta)
         && typeof pregunta.numero === 'number'
         && typeof pregunta.justificacionIA === 'string')
-      .map((pregunta) => ({ pregunta: pregunta.numero, justificacion: pregunta.justificacionIA }));
+      .map((pregunta) => ({
+        pregunta: pregunta.numero,
+        justificacion: pregunta.justificacionIA,
+        desglose: normalizarDesglosePregunta(pregunta.desglose || {})
+      }));
   const materiaNormalizada = normalizarNombreMateria(base.examen.materia);
   const materiaFolderId = crearMateriaFolderId(materiaNormalizada);
 
@@ -163,7 +180,12 @@ const repararReporte = (reporte) => {
       materiaNormalizada,
       materiaFolderId
     },
-    justificacionesIA
+    puntuacionPorPregunta,
+    justificacionesIA: justificacionesIA.map((item, indice) => ({
+      pregunta: typeof item?.pregunta === 'number' ? item.pregunta : indice + 1,
+      justificacion: typeof item?.justificacion === 'string' ? item.justificacion : '',
+      desglose: normalizarDesglosePregunta(item?.desglose || {})
+    }))
   };
 
   return esReporteValido(reporteReparado) ? reporteReparado : null;
@@ -198,6 +220,11 @@ const migrarReportes = (versionInicial, dataInicial) => {
     if (version === 2) {
       data = data.map((reporte) => repararReporte(reporte)).filter(Boolean);
       version = 3;
+      continue;
+    }
+    if (version === 3) {
+      data = data.map((reporte) => repararReporte(reporte)).filter(Boolean);
+      version = 4;
       continue;
     }
 

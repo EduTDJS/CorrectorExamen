@@ -21,16 +21,29 @@ export const exportarIndividualCSV = (reporte) => {
     ['Nota', reporte.calificacionFinal.notaSobre100.toFixed(2)],
     ['Letra', reporte.calificacionFinal.letra],
     [],
-    ['Pregunta', 'Correcta', 'Estudiante', 'Puntaje', 'Justificación IA']
+    [
+      'Pregunta',
+      'Correcta',
+      'Estudiante',
+      'Puntaje',
+      'Criterio aplicado',
+      'Evidencia',
+      'Resultado',
+      'Recomendación'
+    ]
   ];
 
   reporte.puntuacionPorPregunta.forEach((item) => {
+    const evidencia = item.desglose?.evidencia || {};
     filas.push([
       item.numero,
       item.respuestaCorrecta,
       item.respuestaEstudiante,
       item.puntaje.toFixed(2),
-      item.justificacionIA
+      item.desglose?.criterioAplicado || '',
+      `clave=${evidencia.clave || '-'}; respuesta=${evidencia.respuestaEstudiante || '-'}; estado=${evidencia.estado || '-'}; confianza=${evidencia.confianzaOCR ?? '-'}; fuente=${evidencia.fuente || '-'}`,
+      item.desglose?.resultado || item.justificacionIA || '',
+      item.desglose?.recomendacion || ''
     ]);
   });
 
@@ -68,9 +81,22 @@ export const exportarIndividualPDF = (reporte) => {
     const linea = `P${item.numero}: C=${item.respuestaCorrecta || '-'} E=${item.respuestaEstudiante || '-'} Pts=${item.puntaje.toFixed(2)}`;
     doc.text(linea, 14, y);
     y += 5;
-    const justificacion = doc.splitTextToSize(`IA: ${item.justificacionIA}`, 180);
-    doc.text(justificacion, 14, y);
-    y += justificacion.length * 4 + 2;
+    const criterio = doc.splitTextToSize(`Criterio: ${item.desglose?.criterioAplicado || '-'}`, 180);
+    doc.text(criterio, 14, y);
+    y += criterio.length * 4 + 1;
+    const evidencia = item.desglose?.evidencia || {};
+    const evidenciaTexto = doc.splitTextToSize(
+      `Evidencia: clave=${evidencia.clave || '-'}, respuesta=${evidencia.respuestaEstudiante || '-'}, estado=${evidencia.estado || '-'}, confianza=${evidencia.confianzaOCR ?? '-'}, fuente=${evidencia.fuente || '-'}`,
+      180
+    );
+    doc.text(evidenciaTexto, 14, y);
+    y += evidenciaTexto.length * 4 + 1;
+    const resultado = doc.splitTextToSize(`Resultado: ${item.desglose?.resultado || item.justificacionIA || '-'}`, 180);
+    doc.text(resultado, 14, y);
+    y += resultado.length * 4 + 1;
+    const recomendacion = doc.splitTextToSize(`Recomendación: ${item.desglose?.recomendacion || '-'}`, 180);
+    doc.text(recomendacion, 14, y);
+    y += recomendacion.length * 4 + 2;
 
     if (y > 270) {
       doc.addPage();

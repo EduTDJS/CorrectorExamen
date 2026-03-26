@@ -74,12 +74,26 @@ Arreglo de objetos, uno por pregunta.
     "justificacionIA": "Coincide con la clave oficial; mantiene el criterio contable esperado.",
     "confianzaOCR": 92.5,
     "fuenteOCR": "Línea 1",
-    "bajaConfianza": false
+    "bajaConfianza": false,
+    "desglose": {
+      "criterioAplicado": "Comparación directa clave oficial vs respuesta del estudiante",
+      "evidencia": {
+        "clave": "A",
+        "respuestaEstudiante": "A",
+        "estado": "correcta",
+        "confianzaOCR": 92.5,
+        "fuente": "Línea 1"
+      },
+      "resultado": "Respuesta correcta: coincide con la clave (A) y suma 10.00 puntos.",
+      "recomendacion": "Mantener criterio; no requiere ajuste docente."
+    }
   }
 ]
 ```
 
 - `bajaConfianza`: `true` cuando la confianza OCR está por debajo del umbral docente configurado en frontend.
+- `desglose`: contrato explícito reutilizado en UI, persistencia y exportación (PDF/CSV).
+- Campos mínimos del `desglose`: `criterioAplicado`, `evidencia`, `resultado`, `recomendacion`.
 
 ## Entidad `calificacionFinal`
 
@@ -117,7 +131,7 @@ El historial se persiste bajo `corrector_historial_reportes_v1` con envoltura ve
 
 ```json
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "data": [
     {
       "id": "uuid",
@@ -145,6 +159,7 @@ Compatibilidad y resiliencia:
 
 - `schemaVersion: 1`: arreglo legacy sin envoltura (se migra automáticamente a v2).
 - `schemaVersion: 2`: envoltura versionada sin `organizacion` (se migra automáticamente a v3 reconstruyendo carpetas por materia normalizada).
+- `schemaVersion: 3`: reportes previos sin `desglose` explícito por pregunta (se migra automáticamente a v4 normalizando el contrato).
 - Los registros corruptos o incompletos se aíslan durante la lectura: se reparan cuando es posible o se descartan.
 
 ## Relación entre entidades

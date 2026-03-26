@@ -76,9 +76,25 @@ src/
 2. Ingreso de respuestas por transcripción manual o carga de foto/escaneo.
 3. Procesamiento OCR en cliente con Tesseract.js y parser por número de pregunta.
 4. Revisión editable de respuestas en tabla antes de calificar.
-5. Revisión de calificaciones (aciertos, errores, porcentaje y puntaje).
+5. Revisión de calificaciones (aciertos, errores, porcentaje y puntaje) con desglose por pregunta basado en evidencia (clave, respuesta, estado, confianza OCR y fuente).
 6. Sugerencia de calificación con Anthropic (`claude-sonnet-4-20250514`) usando prompt interno en español con criterios contables.
 7. Reporte final con decisión final editable de la profesora y exportación simulada.
+
+## Contrato de desglose por pregunta
+
+El sistema usa un contrato explícito y reutilizable para cada ítem del desglose (`puntuacionPorPregunta[*].desglose`), tanto en UI, persistencia y exportación:
+
+- `criterioAplicado`: regla de evaluación usada en la comparación.
+- `evidencia`: datos trazables de la corrección:
+  - `clave`
+  - `respuestaEstudiante`
+  - `estado` (`correcta|incorrecta`)
+  - `confianzaOCR`
+  - `fuente`
+- `resultado`: conclusión del ítem (incluye impacto en puntaje).
+- `recomendacion`: acción pedagógica o de verificación sugerida.
+
+En **Revisión de calificaciones**, el razonamiento se visualiza en un panel expandible por fila. En **exportación PDF/CSV**, estos mismos campos se incluyen por pregunta.
 
 ## Ajustes y seguridad de API key
 
