@@ -117,3 +117,26 @@ Ejemplo con error:
 - Crear dashboard por `rateLimit.role` para validar que límites por rol estén balanceados.
 - Revisar distribución de `rateLimit.key` para detectar tokens compartidos o tenants saturados.
 - Ajustar `RATE_LIMIT_NEAR_THRESHOLD_RATIO` (default `0.8`) según ruido esperado de alertas tempranas.
+
+## Observabilidad de cobertura de pruebas (CI)
+
+La cobertura de tests se ejecuta con `npm run test:ci` (Vitest + `--coverage`) y genera artefactos en `coverage/`.
+
+Reportes publicados por CI:
+
+- `coverage/lcov.info` para trazabilidad e integración con herramientas externas.
+- `coverage/index.html` y archivos HTML asociados para inspección visual por archivo/línea.
+- Resumen `text` en logs del job para diagnóstico rápido.
+
+Umbrales vigentes (globales y por archivo):
+
+- `statements >= 70`
+- `branches >= 60`
+- `functions >= 70`
+- `lines >= 70`
+
+Interpretación operativa:
+
+- Si el job falla por cobertura, la causa raíz suele estar en archivos nuevos o modificados que no alcanzan umbral por archivo (`perFile: true`).
+- Usar el reporte HTML para localizar líneas sin cubrir y priorizar pruebas en ramas condicionales no ejercitadas.
+- El `lcov.info` debe conservarse como evidencia histórica de calidad en cada ejecución del pipeline.

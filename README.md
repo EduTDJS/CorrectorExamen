@@ -27,7 +27,8 @@ Consulta la guía de contribución en [CONTRIBUTING.md](CONTRIBUTING.md).
 - `npm run build` construye la versión de producción.
 - `npm run preview` previsualiza el build.
 - `npm run lint` valida reglas de ESLint para React + Vite.
-- `npm run test` ejecuta la suite de pruebas con Vitest en modo CI.
+- `npm run test` ejecuta la suite de pruebas con Vitest (sin cobertura, útil para iteración local).
+- `npm run test:ci` ejecuta Vitest con cobertura (`--coverage`) y aplica umbrales globales y por archivo.
 - `npm run test:watch` ejecuta pruebas en modo observación local.
 - `npm run format` aplica formateo con Prettier.
 - `npm run test:e2e` ejecuta pruebas end-to-end con Playwright sobre build local.
@@ -39,7 +40,7 @@ Flujo recomendado antes de abrir PR:
 
 1. `npm install`
 2. `npm run lint`
-3. `npm run test`
+3. `npm run test:ci`
 4. `npm run build`
 5. `npm run test:e2e`
 
@@ -145,6 +146,26 @@ Para mejorar la precisión del OCR cuando se corrige por imagen:
 - **Resolución suficiente:** prefiere fotos de al menos 900x1200 píxeles para lectura estable.
 - **Evita panorámicas o recortes extremos:** el OCR funciona mejor cuando la hoja ocupa la mayor parte del encuadre.
 
+
+## Cobertura de pruebas (Vitest)
+
+La cobertura se genera con provider `v8` y reportes `text`, `lcov` y `html` en la carpeta `coverage/`.
+
+Umbrales vigentes (globales y por archivo):
+
+- Statements: **70%**
+- Branches: **60%**
+- Functions: **70%**
+- Lines: **70%**
+
+Si cualquier umbral no se cumple, `npm run test:ci` falla y el workflow de CI marca el job como fallido.
+
+Cómo interpretar los reportes:
+
+- **text**: resumen inmediato en consola para feedback rápido.
+- **lcov** (`coverage/lcov.info`): formato estándar para integraciones con herramientas de calidad.
+- **html** (`coverage/index.html`): vista navegable para identificar archivos/líneas sin cubrir.
+
 ## Variables de entorno de IA
 
 - `AI_PROVIDER` (opcional, default `anthropic`): proveedor activo (`anthropic` u `openai`).
@@ -215,7 +236,7 @@ npm run test:e2e
 El workflow `.github/workflows/ci.yml` ejecuta en orden:
 
 1. `lint`
-2. tests unit/integration (`npm run test`)
+2. tests unit/integration con cobertura (`npm run test:ci`)
 3. E2E (`npm run test:e2e`)
 
 El job E2E instala Chromium vía Playwright y publica el reporte HTML como artifact.
