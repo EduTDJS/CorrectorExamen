@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import Tesseract from 'tesseract.js';
 
 const pasos = [
   'Configuración del examen',
@@ -14,13 +15,59 @@ const formularioInicial = {
   totalPreguntas: '',
   claveRespuestas: '',
   modoIngreso: 'transcripcion',
-  respuestasEstudiante: '',
   archivoImagen: null
 };
 
 const estadoAsyncInicial = {
   cargando: false,
   error: ''
+};
+
+const letrasValidas = ['A', 'B', 'C', 'D'];
+
+const limpiarRespuestas = (texto = '') => texto.toUpperCase().replace(/[^ABCD]/g, '');
+
+const convertirTextoALista = (texto, totalPreguntas) => {
+  const letras = limpiarRespuestas(texto).split('');
+  const total = Number(totalPreguntas);
+
+  if (!total || total <= 0) return letras;
+
+  const lista = Array(total).fill('');
+  for (let i = 0; i < total; i += 1) {
+    lista[i] = letras[i] || '';
+  }
+
+  return lista;
+};
+
+const parsearOCRPorNumeroPregunta = (textoOCR, totalPreguntas) => {
+  const total = Number(totalPreguntas);
+  const lineas = textoOCR
+    .split('\n')
+    .map((linea) => linea.trim())
+    .filter(Boolean);
+
+  const respuestasPorIndice = {};
+
+  lineas.forEach((linea) => {
+    const coincidencia = linea.match(/(?:pregunta\s*)?(\d{1,3})\s*[:.)-]?\s*([ABCD])/i);
+    if (!coincidencia) return;
+
+    const indice = Number(coincidencia[1]) - 1;
+    const respuesta = coincidencia[2].toUpperCase();
+
+    if (Number.isInteger(indice) && indice >= 0 && (!total || indice < total)) {
+      respuestasPorIndice[indice] = respuesta;
+    }
+  });
+
+  if (Object.keys(respuestasPorIndice).length > 0) {
+    const longitud = total > 0 ? total : Math.max(...Object.keys(respuestasPorIndice).map(Number)) + 1;
+    return Array.from({ length: longitud }, (_, indice) => respuestasPorIndice[indice] || '');
+  }
+
+  return convertirTextoALista(textoOCR, total);
 };
 
 function App() {
@@ -30,6 +77,15 @@ function App() {
   const [estadoPaso, setEstadoPaso] = useState(
     pasos.map(() => ({ ...estadoAsyncInicial }))
   );
+  const [respuestasLista, setRespuestasLista] = useState([]);
+  const [ocrEstado, setOcrEstado] = useState({
+    procesando: false,
+    progreso: 0,
+    error: '',
+    textoDetectado: ''
+  });
+
+  const totalPreguntasNumero = Number(datos.totalPreguntas);
 
   const puntosPorPregunta = useMemo(() => {
     const total = Number(datos.totalPreguntas);
@@ -38,10 +94,8 @@ function App() {
   }, [datos.totalPreguntas]);
 
   const respuestasLimpias = useMemo(() => {
-    return datos.respuestasEstudiante
-      .toUpperCase()
-      .replace(/[^ABCD]/g, '');
-  }, [datos.respuestasEstudiante]);
+    return respuestasLista.join('').toUpperCase().replace(/[^ABCD]/g, '');
+  }, [respuestasLista]);
 
   const claveLimpia = useMemo(() => {
     return datos.claveRespuestas
@@ -78,6 +132,15 @@ function App() {
     setDatos((previo) => ({ ...previo, [campo]: valor }));
   };
 
+  const actualizarRespuesta = (indice, valor) => {
+    setRespuestasLista((previo) => {
+      const longitud = totalPreguntasNumero > 0 ? totalPreguntasNumero : Math.max(previo.length, indice + 1);
+      const copia = Array.from({ length: longitud }, (_, i) => previo[i] || '');
+      copia[indice] = valor;
+      return copia;
+    });
+  };
+
   const cambiarEstadoPaso = (indice, nuevoEstado) => {
     setEstadoPaso((previo) =>
       previo.map((estado, i) => (i === indice ? { ...estado, ...nuevoEstado } : estado))
@@ -110,9 +173,9 @@ function App() {
     }
 
     if (indice === 1) {
-      if (datos.modoIngreso === 'transcripcion' && !datos.respuestasEstudiante.trim()) {
+      if (!respuestasLimpias) {
         nuevosErrores.respuestasEstudiante =
-          'Debe ingresar la transcripción de respuestas del estudiante.';
+          'Debe cargar o transcribir respuestas válidas del estudiante (A, B, C o D).';
       }
       if (datos.modoIngreso === 'imagen' && !datos.archivoImagen) {
         nuevosErrores.archivoImagen = 'Debe seleccionar una imagen de respuestas.';
@@ -135,6 +198,50 @@ function App() {
 
     setErrores(nuevosErrores);
     return Object.keys(nuevosErrores).length === 0;
+  };
+
+  const procesarImagenConOCR = async () => {
+    if (!datos.archivoImagen) {
+      setErrores((previo) => ({ ...previo, archivoImagen: 'Seleccione una imagen antes de procesar.' }));
+      return;
+    }
+
+    setErrores((previo) => ({ ...previo, archivoImagen: '', respuestasEstudiante: '' }));
+    setOcrEstado({ procesando: true, progreso: 0, error: '', textoDetectado: '' });
+
+    try {
+      const resultado = await Tesseract.recognize(datos.archivoImagen, 'spa+eng', {
+        logger: (mensaje) => {
+          if (mensaje.status === 'recognizing text') {
+            setOcrEstado((previo) => ({ ...previo, progreso: Math.round((mensaje.progress || 0) * 100) }));
+          }
+        }
+      });
+
+      const textoDetectado = resultado.data?.text || '';
+      const respuestasParseadas = parsearOCRPorNumeroPregunta(textoDetectado, totalPreguntasNumero);
+
+      if (!limpiarRespuestas(respuestasParseadas.join(''))) {
+        throw new Error('No se detectaron respuestas válidas. Verifique que la imagen sea legible.');
+      }
+
+      setRespuestasLista(respuestasParseadas);
+      setOcrEstado({
+        procesando: false,
+        progreso: 100,
+        error: '',
+        textoDetectado
+      });
+    } catch (error) {
+      setOcrEstado({
+        procesando: false,
+        progreso: 0,
+        error:
+          error?.message ||
+          'No se pudo procesar la imagen. Intente nuevamente con una foto más nítida y buena iluminación.',
+        textoDetectado: ''
+      });
+    }
   };
 
   const avanzarPaso = async () => {
@@ -175,6 +282,8 @@ function App() {
   };
 
   const estadoActual = estadoPaso[pasoActual];
+  const textoManual = respuestasLista.join('');
+  const totalFilasTabla = totalPreguntasNumero > 0 ? totalPreguntasNumero : Math.max(respuestasLista.length, 1);
 
   return (
     <main className="contenedor">
@@ -227,7 +336,10 @@ function App() {
                 type="number"
                 min="1"
                 value={datos.totalPreguntas}
-                onChange={(e) => actualizarDato('totalPreguntas', e.target.value)}
+                onChange={(e) => {
+                  actualizarDato('totalPreguntas', e.target.value);
+                  setRespuestasLista((previo) => convertirTextoALista(previo.join(''), e.target.value));
+                }}
               />
               {errores.totalPreguntas && (
                 <span className="error">{errores.totalPreguntas}</span>
@@ -268,8 +380,8 @@ function App() {
                 Respuestas del estudiante (A/B/C/D)
                 <textarea
                   rows="4"
-                  value={datos.respuestasEstudiante}
-                  onChange={(e) => actualizarDato('respuestasEstudiante', e.target.value)}
+                  value={textoManual}
+                  onChange={(e) => setRespuestasLista(convertirTextoALista(e.target.value, totalPreguntasNumero))}
                   placeholder="Ejemplo: ABCCDA"
                 />
                 {errores.respuestasEstudiante && (
@@ -277,17 +389,76 @@ function App() {
                 )}
               </label>
             ) : (
-              <label>
-                Imagen de respuestas
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => actualizarDato('archivoImagen', e.target.files?.[0] || null)}
-                />
-                {errores.archivoImagen && (
-                  <span className="error">{errores.archivoImagen}</span>
+              <>
+                <label>
+                  Foto o escaneo de respuestas
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => actualizarDato('archivoImagen', e.target.files?.[0] || null)}
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  onClick={procesarImagenConOCR}
+                  disabled={!datos.archivoImagen || ocrEstado.procesando}
+                >
+                  {ocrEstado.procesando ? 'Procesando OCR...' : 'Procesar imagen con OCR'}
+                </button>
+
+                {ocrEstado.procesando && (
+                  <div className="progreso-ocr">
+                    <progress value={ocrEstado.progreso} max="100" />
+                    <span>{ocrEstado.progreso}% completado</span>
+                  </div>
                 )}
-              </label>
+
+                {ocrEstado.error && <p className="error">{ocrEstado.error}</p>}
+                {errores.archivoImagen && <span className="error">{errores.archivoImagen}</span>}
+                {errores.respuestasEstudiante && (
+                  <span className="error">{errores.respuestasEstudiante}</span>
+                )}
+              </>
+            )}
+
+            <div>
+              <h3>Respuestas extraídas / editables</h3>
+              <table className="tabla-respuestas">
+                <thead>
+                  <tr>
+                    <th>Pregunta</th>
+                    <th>Respuesta</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: totalFilasTabla }, (_, indice) => (
+                    <tr key={`pregunta-${indice + 1}`}>
+                      <td>{indice + 1}</td>
+                      <td>
+                        <select
+                          value={respuestasLista[indice] || ''}
+                          onChange={(e) => actualizarRespuesta(indice, e.target.value)}
+                        >
+                          <option value="">Sin marcar</option>
+                          {letrasValidas.map((letra) => (
+                            <option key={letra} value={letra}>
+                              {letra}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {ocrEstado.textoDetectado && (
+              <details>
+                <summary>Ver texto bruto detectado por OCR</summary>
+                <pre className="ocr-texto">{ocrEstado.textoDetectado}</pre>
+              </details>
             )}
           </div>
         )}

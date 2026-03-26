@@ -109,6 +109,37 @@ button[disabled] {
   padding: 0.75rem 1rem;
 }
 
+.progreso-ocr {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.progreso-ocr progress {
+  width: 220px;
+}
+
+.tabla-respuestas {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tabla-respuestas th,
+.tabla-respuestas td {
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 0.45rem;
+}
+
+.ocr-texto {
+  background: #111827;
+  color: #f9fafb;
+  padding: 0.75rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  max-height: 180px;
+}
+
 .acciones {
   margin-top: 1rem;
   display: flex;
