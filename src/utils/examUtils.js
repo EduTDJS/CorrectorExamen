@@ -1,48 +1,106 @@
 export const letrasValidas = ['A', 'B', 'C', 'D'];
 
-export const limpiarRespuestas = (texto = '') => texto.toUpperCase().replace(/[^ABCD]/g, '');
+const mapaCaracteresConfusos = {
+  '4': 'A',
+  '8': 'B',
+  '(': 'C',
+  '0': 'D',
+  O: 'D',
+  Q: 'D'
+};
 
-export const convertirTextoALista = (texto, totalPreguntas) => {
+export const crearRespuestaEnriquecida = (respuesta = '', confianza = null, fuenteLinea = '') => ({
+  respuesta,
+  confianza,
+  fuenteLinea
+});
+
+const normalizarCaracterRespuesta = (caracter = '') => {
+  const crudo = String(caracter).trim().toUpperCase();
+  if (letrasValidas.includes(crudo)) return crudo;
+  return mapaCaracteresConfusos[crudo] || '';
+};
+
+export const obtenerRespuestaTexto = (item) => {
+  if (typeof item === 'string') return normalizarCaracterRespuesta(item);
+  if (!item || typeof item !== 'object') return '';
+  return normalizarCaracterRespuesta(item.respuesta);
+};
+
+export const limpiarRespuestas = (entrada = '') => {
+  if (Array.isArray(entrada)) {
+    return entrada.map((item) => obtenerRespuestaTexto(item)).join('');
+  }
+
+  return String(entrada)
+    .toUpperCase()
+    .split('')
+    .map((char) => normalizarCaracterRespuesta(char))
+    .join('');
+};
+
+export const convertirTextoALista = (texto, totalPreguntas, metadatos = {}) => {
   const letras = limpiarRespuestas(texto).split('');
   const total = Number(totalPreguntas);
 
-  if (!total || total <= 0) return letras;
-
-  const lista = Array(total).fill('');
-  for (let i = 0; i < total; i += 1) {
-    lista[i] = letras[i] || '';
+  if (!total || total <= 0) {
+    return letras.map((respuesta, indice) => crearRespuestaEnriquecida(
+      respuesta,
+      metadatos.confianza ?? null,
+      metadatos.fuenteLinea || `Manual ${indice + 1}`
+    ));
   }
 
-  return lista;
+  return Array.from({ length: total }, (_, indice) => crearRespuestaEnriquecida(
+    letras[indice] || '',
+    metadatos.confianza ?? null,
+    metadatos.fuenteLinea || (letras[indice] ? `Manual ${indice + 1}` : '')
+  ));
 };
 
-export const parsearOCRPorNumeroPregunta = (textoOCR, totalPreguntas) => {
+const regexLineaNumeroRespuesta = /(?:^|\b)(?:p(?:regunta)?\s*)?0*(\d{1,3})\s*[\]\[.)\-:]*\s*([ABCD480QO(])/i;
+
+export const parsearOCRPorNumeroPregunta = (textoOCR, totalPreguntas, opciones = {}) => {
   const total = Number(totalPreguntas);
-  const lineas = textoOCR
-    .split('\n')
-    .map((linea) => linea.trim())
-    .filter(Boolean);
+  const lineasOCR = opciones.lineasOCR
+    || textoOCR.split('\n').map((texto, indice) => ({
+      text: texto.trim(),
+      confidence: null,
+      source: `Línea ${indice + 1}`
+    }));
 
   const respuestasPorIndice = {};
 
-  lineas.forEach((linea) => {
-    const coincidencia = linea.match(/(?:pregunta\s*)?(\d{1,3})\s*[:.)-]?\s*([ABCD])/i);
+  lineasOCR.forEach((linea, indiceLinea) => {
+    const texto = (linea.text || '').trim();
+    if (!texto) return;
+
+    const coincidencia = texto.match(regexLineaNumeroRespuesta);
     if (!coincidencia) return;
 
     const indice = Number(coincidencia[1]) - 1;
-    const respuesta = coincidencia[2].toUpperCase();
+    const respuesta = normalizarCaracterRespuesta(coincidencia[2]);
 
-    if (Number.isInteger(indice) && indice >= 0 && (!total || indice < total)) {
-      respuestasPorIndice[indice] = respuesta;
-    }
+    if (!respuesta) return;
+    if (!Number.isInteger(indice) || indice < 0 || (total > 0 && indice >= total)) return;
+
+    respuestasPorIndice[indice] = crearRespuestaEnriquecida(
+      respuesta,
+      typeof linea.confidence === 'number' ? linea.confidence : null,
+      linea.source || `Línea ${indiceLinea + 1}`
+    );
   });
 
   if (Object.keys(respuestasPorIndice).length > 0) {
     const longitud = total > 0 ? total : Math.max(...Object.keys(respuestasPorIndice).map(Number)) + 1;
-    return Array.from({ length: longitud }, (_, indice) => respuestasPorIndice[indice] || '');
+    return Array.from({ length: longitud }, (_, indice) => respuestasPorIndice[indice] || crearRespuestaEnriquecida());
   }
 
-  return convertirTextoALista(textoOCR, total);
+  const fallbackTexto = lineasOCR.map((linea) => linea.text || '').join(' ');
+  return convertirTextoALista(fallbackTexto, total, {
+    confianza: null,
+    fuenteLinea: 'OCR sin numeración'
+  });
 };
 
 export const extraerJsonDeTexto = (texto = '') => {

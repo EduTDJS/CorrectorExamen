@@ -8,7 +8,7 @@ function StepConfiguracion({ datos, errores, actualizarDato, setRespuestasLista,
       <label>Nombre estudiante<input value={datos.estudianteNombre} onChange={(e) => actualizarDato('estudianteNombre', e.target.value)} />{errores.estudianteNombre && <span className="error">{errores.estudianteNombre}</span>}</label>
       <label>Matrícula estudiante<input value={datos.estudianteMatricula} onChange={(e) => actualizarDato('estudianteMatricula', e.target.value)} />{errores.estudianteMatricula && <span className="error">{errores.estudianteMatricula}</span>}</label>
       <label> Total de preguntas
-        <input type="number" min="1" value={datos.totalPreguntas} onChange={(e) => { actualizarDato('totalPreguntas', e.target.value); setRespuestasLista((previo) => convertirTextoALista(previo.join(''), e.target.value)); }} />
+        <input type="number" min="1" value={datos.totalPreguntas} onChange={(e) => { actualizarDato('totalPreguntas', e.target.value); setRespuestasLista((previo) => convertirTextoALista(previo, e.target.value)); }} />
         {errores.totalPreguntas && (<span className="error">{errores.totalPreguntas}</span>)}
       </label>
       <label>Clave de respuestas (solo A/B/C/D)

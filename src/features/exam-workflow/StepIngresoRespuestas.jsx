@@ -1,3 +1,5 @@
+import { obtenerRespuestaTexto } from '../../utils/examUtils';
+
 function StepIngresoRespuestas({
   datos,
   errores,
@@ -11,7 +13,8 @@ function StepIngresoRespuestas({
   totalFilasTabla,
   respuestasLista,
   actualizarRespuesta,
-  letrasValidas
+  letrasValidas,
+  umbralBajaConfianza
 }) {
   return (
     <div className="paso">
@@ -41,11 +44,27 @@ function StepIngresoRespuestas({
       <div>
         <h3>Respuestas extraídas / editables</h3>
         <table className="tabla-respuestas">
-          <thead><tr><th>Pregunta</th><th>Respuesta</th></tr></thead>
+          <thead><tr><th>Pregunta</th><th>Respuesta</th><th>Confianza OCR</th><th>Fuente</th></tr></thead>
           <tbody>
-            {Array.from({ length: totalFilasTabla }, (_, indice) => (
-              <tr key={`pregunta-${indice + 1}`}><td>{indice + 1}</td><td><select value={respuestasLista[indice] || ''} onChange={(e) => actualizarRespuesta(indice, e.target.value)}><option value="">Sin marcar</option>{letrasValidas.map((letra) => (<option key={letra} value={letra}>{letra}</option>))}</select></td></tr>
-            ))}
+            {Array.from({ length: totalFilasTabla }, (_, indice) => {
+              const respuestaData = respuestasLista[indice] || {};
+              const confianza = typeof respuestaData.confianza === 'number' ? respuestaData.confianza : null;
+              const bajaConfianza = confianza !== null && confianza < umbralBajaConfianza;
+
+              return (
+                <tr key={`pregunta-${indice + 1}`} className={bajaConfianza ? 'fila-baja-confianza' : ''}>
+                  <td>{indice + 1}</td>
+                  <td>
+                    <select value={obtenerRespuestaTexto(respuestaData) || ''} onChange={(e) => actualizarRespuesta(indice, e.target.value)}>
+                      <option value="">Sin marcar</option>
+                      {letrasValidas.map((letra) => (<option key={letra} value={letra}>{letra}</option>))}
+                    </select>
+                  </td>
+                  <td>{confianza === null ? '-' : `${confianza.toFixed(1)}%`}</td>
+                  <td>{respuestaData.fuenteLinea || '-'}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
