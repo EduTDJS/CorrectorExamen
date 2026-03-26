@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
+    "db:backup": "node backend/db/backup-dump.js",
+    "db:restore": "node backend/db/restore-dump.js",
+    "db:restore:drill": "node backend/db/restore-drill.js",
     "dev": "vite",
     "dev:api": "node backend/server.js",
     "format": "prettier --write .",

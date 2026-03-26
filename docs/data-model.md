@@ -91,3 +91,16 @@ Cada operación de creación/actualización de reportes ejecuta en una misma tra
 5. inserción en `audit_logs`.
 
 Si falla un paso, se revierte toda la transacción.
+
+## Indicadores mínimos de respaldo (modelo operativo)
+
+Para asegurar recuperabilidad del dato, el modelo operativo incorpora estos indicadores mínimos (expuestos en observabilidad y runbooks):
+
+- **Edad del último backup (`backup_last_age_minutes`)**  
+  Diferencia en minutos entre `now` y timestamp del último backup exitoso.
+- **Tasa de éxito de backups (`backup_success_rate_24h`)**  
+  `backups_exitosos_24h / backups_totales_24h`.
+- **Tiempo de restore (`restore_duration_seconds`)**  
+  Duración de un restore validado de inicio a fin (incluye validación de integridad).
+
+Estos indicadores deben registrarse por ambiente (`dev`, `staging`, `prod`) y conservar evidencia asociada de restore drill en CI.

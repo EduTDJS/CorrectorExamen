@@ -140,3 +140,22 @@ Interpretación operativa:
 - Si el job falla por cobertura, la causa raíz suele estar en archivos nuevos o modificados que no alcanzan umbral por archivo (`perFile: true`).
 - Usar el reporte HTML para localizar líneas sin cubrir y priorizar pruebas en ramas condicionales no ejercitadas.
 - El `lcov.info` debe conservarse como evidencia histórica de calidad en cada ejecución del pipeline.
+
+## Indicadores mínimos de respaldo y recuperación
+
+Además de logs de aplicación, se deben registrar y monitorear estos indicadores de continuidad:
+
+- `backup_last_age_minutes` (edad del último backup exitoso por ambiente).
+- `backup_success_rate_24h` (tasa de éxito de backups de últimas 24h).
+- `restore_duration_seconds` (tiempo total de restore validado).
+
+Fuentes de evidencia:
+
+- Evidencias JSON generadas por scripts en `backend/db/` (`*.evidence.json`).
+- Artefacto de CI del job programado de restore drill (`artifacts/restore-drill/restore-drill-evidence.json`).
+
+Alertas sugeridas:
+
+- `backup_last_age_minutes` por encima del RPO objetivo del ambiente.
+- `backup_success_rate_24h < 0.95` en `prod`.
+- Tendencia de `restore_duration_seconds` cercana o superior al RTO objetivo del ambiente.
