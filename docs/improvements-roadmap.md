@@ -40,8 +40,12 @@ Este documento resume mejoras de alto impacto para evolucionar **CalificaYa** de
   - Tasa de error por proveedor IA.
   - P50/P95 de latencia por endpoint.
   - Tiempo total de corrección por grupo.
-- **Rate limiting por institución y usuario**
-  - Evita abuso y controla costos de IA.
+- **Evolucionar rate limiting existente (token/IP) hacia segmentación institucional y por usuario**
+  - Estado actual: ya existe control de rate limiting por token/IP mediante `RATE_LIMIT_KEY_STRATEGY`.
+  - Siguiente paso: segmentación real por institución y por usuario autenticado para aislar consumo y evitar interferencia entre tenants.
+  - Incorporar límites diferenciados por rol (docente, coordinador, administrador) según criticidad y volumen esperado.
+  - Añadir métricas de saturación (rechazos por límite, cercanía a umbral y ventanas más exigidas) para ajuste fino de capacidad/costos.
+  - Ver detalle técnico y lineamientos vigentes en `docs/security.md` (fuente de verdad para controles de seguridad).
 - **Circuit breaker y fallback de proveedor**
   - Si falla proveedor primario, intentar proveedor secundario (si está habilitado).
 
