@@ -1,6 +1,6 @@
 # CorrectorExamen
 
-Frontend web para configurar, corregir y exportar resultados de exámenes.
+Aplicación web para configurar, corregir y exportar resultados de exámenes, con OCR y sugerencia de calificación asistida por IA.
 
 ## Arquitectura
 
@@ -11,7 +11,7 @@ Frontend web para configurar, corregir y exportar resultados de exámenes.
 
 ## Cómo contribuir
 
-Consulta la guía de contribución en [CONTRIBUTING.md](CONTRIBUTING.md) para ramas, commits, política de PR y checklist obligatoria.
+Consulta la guía de contribución en [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Requisitos
 
@@ -21,14 +21,14 @@ Consulta la guía de contribución en [CONTRIBUTING.md](CONTRIBUTING.md) para ra
 ## Scripts
 
 - `npm install` instala dependencias.
-- `npm run dev` ejecuta la aplicación en desarrollo.
+- `npm run dev` ejecuta el frontend (Vite).
+- `npm run dev:api` ejecuta el backend local (`backend/server.js`).
 - `npm run build` construye la versión de producción.
 - `npm run preview` previsualiza el build.
 - `npm run lint` valida reglas de ESLint para React + Vite.
 - `npm run test` ejecuta la suite de pruebas con Vitest en modo CI.
 - `npm run test:watch` ejecuta pruebas en modo observación local.
 - `npm run format` aplica formateo con Prettier.
-
 
 ## Calidad local y CI
 
@@ -39,83 +39,65 @@ Flujo recomendado antes de abrir PR:
 3. `npm run test`
 4. `npm run build`
 
-En CI se debe ejecutar al menos este pipeline:
-
-```bash
-npm ci
-npm run lint
-npm run test
-npm run build
-```
-
-## Mapa de módulos (refactor)
+## Mapa de módulos
 
 ```text
+backend/
+└── server.js                            # API interna /api/calificacion/sugerir
+
 src/
 ├── App.jsx                              # Orquestador del flujo y composición de UI
-├── components/                          # Componentes presentacionales reutilizables
+├── components/
 │   ├── StepIndicator.jsx
 │   └── TopBar.jsx
 ├── features/
-│   └── exam-workflow/                   # Vistas por paso del flujo guiado
+│   └── exam-workflow/
 │       ├── StepConfiguracion.jsx
 │       ├── StepIngresoRespuestas.jsx
 │       ├── StepReporteFinal.jsx
 │       └── StepRevision.jsx
-├── hooks/                               # Hooks de estado y comportamiento de dominio
+├── hooks/
 │   ├── useExamWorkflow.js
 │   └── useReportes.js
-├── services/                            # Integraciones externas y persistencia
-│   ├── aiService.js                     # Anthropic messages API
+├── services/
+│   ├── aiService.js                     # Cliente del endpoint interno /api/calificacion/sugerir
 │   ├── exportService.js                 # Exportación PDF/CSV
 │   ├── ocrService.js                    # OCR con Tesseract
-│   └── storageService.js                # localStorage (API key, decisión final, reportes)
+│   └── storageService.js                # localStorage (decisión final, reportes)
 ├── utils/
-│   └── examUtils.js                     # Helpers puros: parseo, sanitización, CSV, mapeo PUCMM
+│   └── examUtils.js
 ├── main.jsx
 └── styles.css
 ```
 
 ## Flujo implementado
 
-1. Configuración del examen (materia, grupo, fecha, estudiante, total de preguntas y clave).
-2. Ingreso de respuestas por transcripción manual o carga de foto/escaneo.
-3. Procesamiento OCR en cliente con Tesseract.js y parser por número de pregunta.
-4. Revisión de calificaciones con desglose por pregunta, puntaje por ítem y justificación IA por ítem.
-5. Reporte individual con nota total sobre 100 y mapeo a escala PUCMM:
-   - A: 90–100
-   - B+: 85–89
-   - B: 80–84
-   - C+: 75–79
-   - C: 70–74
-   - D: 65–69
-   - F: 0–64
-6. Exportación individual en PDF (jsPDF) y CSV.
-7. Vista grupal con tabla de estudiantes, notas, distribución de letras y exportación CSV grupal.
-8. Historial persistido en `localStorage` con filtros por materia, grupo y fecha.
+1. Configuración del examen.
+2. Ingreso de respuestas (manual u OCR).
+3. Scoring automático.
+4. Sugerencia IA vía backend propio.
+5. Ajuste docente final y exportación.
+6. Historial local de reportes con filtros.
 
-## Modelo de datos (persistido)
+## Integración de IA (estado actual)
 
-Cada reporte individual guardado en historial incluye:
+- El frontend llama `POST /api/calificacion/sugerir`.
+- El backend consulta `https://api.anthropic.com/v1/messages`.
+- La API key de Anthropic se gestiona **solo en servidor** (`ANTHROPIC_API_KEY`).
+- La UI ya no solicita secretos al usuario final.
 
-- `examen`: configuración completa del examen.
-- `estudiante`: nombre y matrícula.
-- `respuestas`: lista y texto normalizado.
-- `puntuacionPorPregunta`: arreglo con respuesta correcta, respuesta del estudiante, puntaje y estado.
-- `justificacionesIA`: arreglo por pregunta con su justificación.
-- `calificacionFinal`: nota sobre 100, letra PUCMM y justificación docente.
+## Ejecución local
 
-## Ajustes y seguridad de API key
+1. Inicia backend en una terminal:
 
-- Hay un panel **Ajustes API** para capturar la API key de Anthropic.
-- La API key se guarda localmente en `localStorage` y **no se hardcodea** en el código.
-- Puede guardarse o eliminarse desde la UI.
+```bash
+ANTHROPIC_API_KEY=tu_key npm run dev:api
+```
 
-## Integración de IA
+2. Inicia frontend en otra terminal:
 
-- Se realiza `fetch` directo a `https://api.anthropic.com/v1/messages` desde `src/services/aiService.js`.
-- El prompt interno exige salida JSON con:
-  - `puntuacion_sugerida`
-  - `justificacion_breve`
-- La respuesta se parsea extrayendo JSON del texto devuelto.
-- La sugerencia de IA autocompleta la decisión final, pero siempre puede editarse manualmente.
+```bash
+npm run dev
+```
+
+> Vite proxy redirige `/api/*` a `http://localhost:8787`.

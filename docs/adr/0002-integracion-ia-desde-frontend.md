@@ -1,5 +1,9 @@
 # ADR 0002: Integración IA desde frontend
 
+## Estado
+
+Superada por [ADR 0005](0005-migracion-ia-a-backend.md) el 2026-03-26.
+
 ## Contexto
 
 Se requiere sugerir puntuación y justificación docente asistida por IA con baja fricción de implementación. Una opción era intermediar con backend propio para custodiar credenciales, pero actualmente el proyecto es frontend-first y busca simplicidad operativa.

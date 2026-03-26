@@ -2,31 +2,20 @@
 
 ## Objetivo del sistema
 
-CorrectorExamen es una aplicación frontend orientada a **configurar, corregir y reportar exámenes de selección múltiple**. El objetivo operativo es:
-
-1. Capturar la configuración académica del examen.
-2. Recibir respuestas del estudiante por transcripción manual o por OCR de imagen.
-3. Calcular un puntaje automático por pregunta y puntaje total sobre 100.
-4. Solicitar una sugerencia de puntuación/justificación a IA (Anthropic) como apoyo docente.
-5. Consolidar una decisión final de calificación.
-6. Exportar reportes individuales y grupales.
-7. Persistir historial local para consulta y filtrado posterior.
+CorrectorExamen permite **configurar, corregir y reportar exámenes de selección múltiple** con soporte de OCR e IA para sugerencia docente.
 
 ## Diagrama lógico de módulos
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────────┐
-│ UI (React)                                                                 │
-│ App.jsx + StepConfiguracion + StepIngresoRespuestas + StepRevision +       │
-│ StepReporteFinal + TopBar + StepIndicator                                  │
+│ UI (React + Vite)                                                          │
+│ App.jsx + pasos de workflow + panel de reportes                            │
 └───────────────┬────────────────────────────────────────────────────────────┘
                 │ eventos/estado
                 ▼
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ Dominio / Flujo                                                            │
-│ hooks/useExamWorkflow (navegación por pasos)                               │
-│ hooks/useReportes (estado de historial y filtros)                          │
-│ utils/examUtils (parseo OCR, limpieza, mapeo de letras, CSV helpers)       │
+│ hooks/useExamWorkflow + hooks/useReportes + utils/examUtils               │
 └───────┬─────────────────────────────┬───────────────────────────┬──────────┘
         │                             │                           │
         ▼                             ▼                           ▼
@@ -39,96 +28,63 @@ CorrectorExamen es una aplicación frontend orientada a **configurar, corregir y
        ▼                               ▼                           ▼
 ┌───────────────┐              ┌───────────────┐           ┌───────────────┐
 │aiService      │              │Navegador      │           │Descargas      │
-│Anthropic API  │              │almacenamiento │           │.pdf / .csv    │
-└───────────────┘              └───────────────┘           └───────────────┘
+│/api/... local │              │almacenamiento │           │.pdf / .csv    │
+└──────┬────────┘              └───────────────┘           └───────────────┘
+       │
+       ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│ Backend Node (backend/server.js)                                          │
+│ POST /api/calificacion/sugerir -> Anthropic Messages API                  │
+│ Variables: ANTHROPIC_API_KEY, ANTHROPIC_MODEL, PORT                       │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Flujo de datos de punta a punta
+## Flujo de datos de IA
 
-1. **Configuración**
-   - La UI captura `materia`, `grupo`, `fecha`, `estudiante`, `totalPreguntas`, `claveRespuestas`.
-   - Se validan obligatorios y formato de clave (`A|B|C|D`).
+1. `StepRevision` dispara `sugerirCalificacionConIA`.
+2. `src/services/aiService.js` llama `POST /api/calificacion/sugerir`.
+3. `backend/server.js` valida payload (`datos`, `puntaje`) y construye prompt.
+4. El backend consulta `https://api.anthropic.com/v1/messages` con `x-api-key` desde entorno.
+5. El frontend parsea la respuesta JSON y autocompleta la decisión final editable.
 
-2. **OCR / transcripción**
-   - Modo transcripción: texto manual → `convertirTextoALista` / `limpiarRespuestas`.
-   - Modo imagen: archivo → `procesarImagenOCR` (Tesseract) → texto detectado → `parsearOCRPorNumeroPregunta`.
+## Contratos de entrada/salida
 
-3. **Scoring automático**
-   - Se compara respuesta del estudiante vs clave oficial por índice.
-   - Se calcula `puntaje` por pregunta (`100 / totalPreguntas` cuando correcta; de lo contrario 0).
-   - Se genera `resultadoRevision`: aciertos, errores, porcentaje y puntaje total.
+### Frontend: `services/aiService.js`
 
-4. **IA (sugerencia docente)**
-   - Si existe API key en `localStorage`, se invoca `sugerirCalificacionIA`.
-   - Se envía contexto del examen + puntaje automático.
-   - Se recibe JSON con `puntuacion_sugerida` y `justificacion_breve`.
-   - La sugerencia autocompleta `decisionFinal`, editable manualmente.
-
-5. **Reporte**
-   - Se arma un objeto `reporte` con examen, estudiante, respuestas, desglose, justificaciones y calificación final.
-   - Se puede exportar reporte individual en PDF o CSV.
-
-6. **Historial**
-   - El reporte se inserta al inicio del arreglo `reportes`.
-   - `useReportes` persiste automáticamente en `localStorage`.
-   - La UI filtra historial por materia, grupo y fecha; también permite exportación grupal CSV.
-
-## Contratos de entrada/salida por servicio
-
-### `services/ocrService.js`
-
-#### `procesarImagenOCR({ archivoImagen, totalPreguntas, onProgress })`
+#### `sugerirCalificacionIA({ datos, puntaje })`
 - **Entrada**
-  - `archivoImagen: File | Blob`
-  - `totalPreguntas: number`
-  - `onProgress?: (porcentaje: number) => void`
-- **Salida (Promise resolve)**
-  - `{ textoDetectado: string, respuestasParseadas: string[] }`
-- **Errores relevantes**
-  - Si no hay respuestas válidas parseadas, lanza error de legibilidad.
-
-### `services/aiService.js`
-
-#### `sugerirCalificacionIA({ apiKey, datos, puntaje })`
-- **Entrada**
-  - `apiKey: string` (Anthropic)
   - `datos: { materia, grupo, fecha, totalPreguntas, ... }`
   - `puntaje: number` (0–100)
-- **Salida (Promise resolve)**
-  - `{ puntuacion: string, justificacion: string }` (`puntuacion` con 2 decimales)
-- **Errores relevantes**
-  - Timeout a 20s (`AbortError`).
-  - Error HTTP/JSON inválido.
-  - `puntuacion_sugerida` fuera de rango.
+- **Salida**
+  - `{ puntuacion: string, justificacion: string }`
+- **Errores**
+  - Timeout 20s.
+  - Error HTTP del backend.
+  - JSON de IA sin `puntuacion_sugerida` válida.
 
-### `services/storageService.js`
+### Backend: `POST /api/calificacion/sugerir`
+- **Entrada**
+  - JSON `{ datos: object, puntaje: number }`
+- **Salida éxito**
+  - Payload de Anthropic (`content[]`, etc.).
+- **Errores**
+  - `400` payload inválido.
+  - `500` secreto faltante.
+  - `502` error de red/proveedor.
+  - `504` timeout hacia Anthropic.
 
-- `leerApiKey(): string`
-- `guardarApiKey(apiKey: string): void`
-- `eliminarApiKey(): void`
-- `leerDecisionFinal(): { puntuacion: string, justificacion: string }`
-- `guardarDecisionFinal(decisionFinal: object): void`
-- `leerReportes(): Reporte[]`
-- `guardarReportes(reportes: Reporte[]): void`
+## Ejecución local
 
-> Persistencia local en claves: `corrector_anthropic_api_key`, `corrector_decision_final`, `corrector_historial_reportes_v1`.
-
-### `services/exportService.js`
-
-- `exportarIndividualCSV(reporte: Reporte): void`
-- `exportarIndividualPDF(reporte: Reporte): void`
-- `exportarGrupoCSV(reportesFiltrados: Reporte[]): void`
-
-**Comportamiento**: generan archivos y disparan descarga en navegador (no devuelven payload de datos).
+1. Iniciar backend:
+   - `ANTHROPIC_API_KEY=... npm run dev:api`
+2. Iniciar frontend en otro proceso:
+   - `npm run dev`
+3. Vite enruta `/api/*` a `http://localhost:8787` mediante proxy.
 
 ## ADRs relacionadas
-
-Las decisiones estructurales vigentes de esta arquitectura están documentadas en:
 
 - [ADR 0001: OCR en cliente con Tesseract](adr/0001-ocr-en-cliente-con-tesseract.md)
 - [ADR 0002: Integración IA desde frontend](adr/0002-integracion-ia-desde-frontend.md)
 - [ADR 0003: Persistencia en localStorage](adr/0003-persistencia-localstorage.md)
 - [ADR 0004: Exportación PDF/CSV en cliente](adr/0004-exportacion-pdf-csv-en-cliente.md)
-
-Para nuevas decisiones estructurales, crear un ADR siguiendo la guía en [docs/adr/README.md](adr/README.md).
-
+- [ADR 0005: Migración IA a backend y custodia de secretos](adr/0005-migracion-ia-a-backend.md)

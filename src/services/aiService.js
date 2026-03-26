@@ -1,38 +1,21 @@
 import { extraerJsonDeTexto } from '../utils/examUtils';
 
-export const sugerirCalificacionIA = async ({ apiKey, datos, puntaje }) => {
+export const sugerirCalificacionIA = async ({ datos, puntaje }) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000);
 
   try {
-    const prompt = [
-      'Eres una profesora experta en contabilidad y evaluación formativa.',
-      `Materia: ${datos.materia}`,
-      `Grupo: ${datos.grupo}`,
-      `Fecha: ${datos.fecha}`,
-      `Total de preguntas: ${datos.totalPreguntas}`,
-      `Puntaje automático actual: ${puntaje.toFixed(2)} / 100`,
-      'Responde SOLO JSON: {"puntuacion_sugerida": number, "justificacion_breve": "texto"}'
-    ].join('\n');
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch('/api/calificacion/sugerir', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
+        'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 250,
-        temperature: 0.2,
-        messages: [{ role: 'user', content: prompt }]
-      }),
+      body: JSON.stringify({ datos, puntaje }),
       signal: controller.signal
     });
 
     const data = await response.json();
-    if (!response.ok) throw new Error(data?.error?.message || 'Error inesperado al consultar Anthropic.');
+    if (!response.ok) throw new Error(data?.error?.message || 'Error inesperado al consultar el backend de IA.');
 
     const textoIa = (data?.content || [])
       .filter((bloque) => bloque?.type === 'text')

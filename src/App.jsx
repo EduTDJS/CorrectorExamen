@@ -10,13 +10,7 @@ import { useReportes } from './hooks/useReportes';
 import { sugerirCalificacionIA } from './services/aiService';
 import { exportarGrupoCSV, exportarIndividualCSV, exportarIndividualPDF } from './services/exportService';
 import { procesarImagenOCR } from './services/ocrService';
-import {
-  eliminarApiKey,
-  guardarApiKey,
-  guardarDecisionFinal,
-  leerApiKey,
-  leerDecisionFinal
-} from './services/storageService';
+import { guardarDecisionFinal, leerDecisionFinal } from './services/storageService';
 import {
   convertirTextoALista,
   letrasValidas,
@@ -49,16 +43,11 @@ function App() {
   const [respuestasLista, setRespuestasLista] = useState([]);
   const [ocrEstado, setOcrEstado] = useState({ procesando: false, progreso: 0, error: '', textoDetectado: '' });
   const [panelAjustesAbierto, setPanelAjustesAbierto] = useState(false);
-  const [apiKeyTemporal, setApiKeyTemporal] = useState('');
   const [decisionFinal, setDecisionFinal] = useState(() => leerDecisionFinal());
   const [iaEstado, setIaEstado] = useState({ cargando: false, error: '', sugerencia: null });
 
   const { reportes, setReportes, filtrosHistorial, setFiltrosHistorial, reportesFiltrados } = useReportes();
   const { pasoActual, estadoActual, avanzarPaso, retrocederPaso } = useExamWorkflow(pasos);
-
-  useEffect(() => {
-    setApiKeyTemporal(leerApiKey());
-  }, []);
 
   useEffect(() => {
     guardarDecisionFinal(decisionFinal);
@@ -178,15 +167,9 @@ function App() {
   };
 
   const sugerirCalificacionConIA = async () => {
-    const apiKey = leerApiKey();
-    if (!apiKey) {
-      setIaEstado({ cargando: false, error: 'No hay API key configurada. Abra Ajustes y guarde su API key de Anthropic.', sugerencia: null });
-      return;
-    }
-
     setIaEstado({ cargando: true, error: '', sugerencia: null });
     try {
-      const sugerencia = await sugerirCalificacionIA({ apiKey, datos, puntaje: resultadoRevision.puntaje });
+      const sugerencia = await sugerirCalificacionIA({ datos, puntaje: resultadoRevision.puntaje });
       setIaEstado({ cargando: false, error: '', sugerencia });
       setDecisionFinal(sugerencia);
       setErrores((previo) => ({ ...previo, decisionFinal: '' }));
@@ -222,17 +205,6 @@ function App() {
     if (tipo === 'csv') exportarIndividualCSV(reporte);
   };
 
-  const onGuardarApiKey = () => {
-    guardarApiKey(apiKeyTemporal);
-    window.alert('API key guardada localmente en este navegador.');
-  };
-
-  const onEliminarApiKey = () => {
-    eliminarApiKey();
-    setApiKeyTemporal('');
-    window.alert('API key eliminada.');
-  };
-
   const textoManual = respuestasLista.join('');
   const totalFilasTabla = totalPreguntasNumero > 0 ? totalPreguntasNumero : Math.max(respuestasLista.length, 1);
 
@@ -243,15 +215,7 @@ function App() {
       {panelAjustesAbierto && (
         <section className="panel ajustes">
           <h2>Ajustes</h2>
-          <label>
-            API key de Anthropic
-            <input type="password" value={apiKeyTemporal} onChange={(e) => setApiKeyTemporal(e.target.value)} placeholder="sk-ant-..." />
-          </label>
-          <p className="detalle">La API key se guarda en localStorage del navegador, sin hardcodearse.</p>
-          <div className="acciones-ajustes">
-            <button type="button" onClick={onGuardarApiKey}>Guardar API key</button>
-            <button type="button" onClick={onEliminarApiKey}>Eliminar API key</button>
-          </div>
+          <p className="detalle">La integración de IA usa un endpoint backend interno. La API key de Anthropic se gestiona solo en el servidor.</p>
         </section>
       )}
 

@@ -27,3 +27,5 @@ Cada ADR debe incluir estas secciones mínimas:
 - [0002 - Integración IA desde frontend](0002-integracion-ia-desde-frontend.md)
 - [0003 - Persistencia en localStorage](0003-persistencia-localstorage.md)
 - [0004 - Exportación PDF/CSV en cliente](0004-exportacion-pdf-csv-en-cliente.md)
+- [0005 - Migración IA a backend y custodia de secretos](0005-migracion-ia-a-backend.md)
+
