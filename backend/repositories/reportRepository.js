@@ -61,6 +61,21 @@ const toAuditLog = ({ reportId, action, actor, metadata = {} }) => ({
   metadata_json: JSON.stringify(metadata)
 });
 
+const hasFinalGradeChanged = (current = {}, incoming = {}) => {
+  const currentGrade = current?.calificacionFinal || {};
+  const incomingGrade = incoming?.calificacionFinal || {};
+
+  return JSON.stringify({
+    notaSobre100: Number(currentGrade?.notaSobre100),
+    letra: String(currentGrade?.letra || ''),
+    justificacionDocente: String(currentGrade?.justificacionDocente || '')
+  }) !== JSON.stringify({
+    notaSobre100: Number(incomingGrade?.notaSobre100),
+    letra: String(incomingGrade?.letra || ''),
+    justificacionDocente: String(incomingGrade?.justificacionDocente || '')
+  });
+};
+
 const stableSlug = (value, fallback = 'general') => {
   const normalized = String(value || '')
     .normalize('NFD')
@@ -217,15 +232,25 @@ const persistReport = async (reportPayload, {
   const projection = toProjectionRecord(payloadWithOwnership, { reportId, createdAt, updatedAt });
   const normalized = buildNormalizedRecord(payloadWithOwnership, { reportId, createdAt, updatedAt });
 
+  const { extraActions = [], ...baseAuditMetadata } = auditMetadata || {};
+
   await storage.upsertReportGraph(
     projection,
     normalized,
-    toAuditLog({
-      reportId,
-      action,
-      actor,
-      metadata: { source: 'api', id: reportId, ...auditMetadata }
-    })
+    [
+      toAuditLog({
+        reportId,
+        action,
+        actor,
+        metadata: { source: 'api', id: reportId, ...baseAuditMetadata }
+      }),
+      ...(Array.isArray(extraActions) ? extraActions.map((extraAction) => toAuditLog({
+        reportId,
+        action: extraAction.action,
+        actor,
+        metadata: { source: 'api', id: reportId, ...extraAction.metadata }
+      })) : [])
+    ]
   );
 
   return fromStorageRow({ ...projection, ...normalized.submission, ...normalized.exam, ...normalized.group, ...normalized.student, ...normalized.grade });
@@ -261,16 +286,44 @@ export const updateReport = async (reportId, reportPayload, {
   }
 
   const currentPayload = fromStorageRow(current) || {};
+  const finalGradeChanged = hasFinalGradeChanged(currentPayload, reportPayload);
 
   return persistReport(reportPayload, {
     reportId,
     actor,
     action: 'report_updated',
     ownership,
-    auditMetadata,
+    auditMetadata: {
+      ...auditMetadata,
+      extraActions: finalGradeChanged
+        ? [{
+          action: 'final_grade_changed',
+          metadata: {
+            ...auditMetadata,
+            previousFinalGrade: currentPayload?.calificacionFinal || null,
+            nextFinalGrade: reportPayload?.calificacionFinal || null
+          }
+        }]
+        : []
+    },
     createdAt: currentPayload.creadoEn || current.created_at,
     updatedAt: nowIso()
   });
+};
+
+export const deleteReport = async (reportId, {
+  actor = 'sistema_backend',
+  auditMetadata = {}
+} = {}) => {
+  const storage = await getReportsStorageAdapter();
+  return storage.deleteReportGraph(reportId, [
+    toAuditLog({
+      reportId,
+      action: 'report_deleted',
+      actor,
+      metadata: { source: 'api', id: reportId, ...auditMetadata }
+    })
+  ]);
 };
 
 export const getReportById = async (reportId, accessScope = {}) => {

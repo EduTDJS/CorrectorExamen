@@ -12,9 +12,9 @@ class AuthorizationError extends Error {
 }
 
 const PERMISSIONS_BY_ROLE = {
-  admin: new Set(['create_exam', 'correct_exam', 'export_report', 'view_history']),
-  docente: new Set(['create_exam', 'correct_exam', 'view_history']),
-  coordinador: new Set(['correct_exam', 'export_report', 'view_history']),
+  admin: new Set(['create_exam', 'correct_exam', 'export_report', 'view_history', 'delete_report']),
+  docente: new Set(['create_exam', 'correct_exam', 'view_history', 'delete_report']),
+  coordinador: new Set(['correct_exam', 'export_report', 'view_history', 'delete_report']),
   corrector: new Set(['correct_exam', 'view_history']),
   auditor: new Set(['view_history'])
 };

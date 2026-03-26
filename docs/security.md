@@ -69,12 +69,13 @@ Acciones críticas y mapeo de endpoints:
 - `correct_exam` → `POST /api/calificacion/sugerir`
 - `export_report` → `GET /api/reportes/:id/export`
 - `view_history` → `GET /api/reportes`, `GET /api/reportes/:id`
+- `delete_report` → `DELETE /api/reportes/:id`
 
 Matriz de permisos final (marzo 2026):
 
-- `admin`: `create_exam`, `correct_exam`, `export_report`, `view_history` (control total de plataforma).
-- `docente`: `create_exam`, `correct_exam`, `view_history` (opera su flujo, sin exportación).
-- `coordinador`: `correct_exam`, `export_report`, `view_history` (supervisión académica y exportaciones).
+- `admin`: `create_exam`, `correct_exam`, `export_report`, `view_history`, `delete_report` (control total de plataforma).
+- `docente`: `create_exam`, `correct_exam`, `view_history`, `delete_report` (opera su flujo y puede eliminar recursos propios en su alcance).
+- `coordinador`: `correct_exam`, `export_report`, `view_history`, `delete_report` (supervisión académica, exportación y eliminación en su tenant).
 - `corrector`: `correct_exam`, `view_history` (corrección operativa sin alta de reportes).
 - `auditor`: `view_history` (lectura para revisión y cumplimiento).
 
@@ -96,7 +97,30 @@ Casos auditados de denegación (trazabilidad de roadmap):
 
 - `401` por ausencia/token de sesión inválido sobre rutas protegidas (`/api/reportes`, `/api/reportes/:id/export`, `/api/calificacion/sugerir`): evento `authentication_failed`.
 - `403` por rol sin permiso RBAC (por ejemplo `auditor` o `coordinador` en `POST /api/reportes`): evento `authorization_denied`.
-- `403` por recurso fuera de alcance tenant/ownership (`/api/reportes/:id`, `/api/reportes/:id/export`): evento `authorization_denied` con `resource` del endpoint y `actor` autenticado.
+- `403` por recurso fuera de alcance tenant/ownership (`/api/reportes/:id`, `/api/reportes/:id/export`, `DELETE /api/reportes/:id`): evento `report_scope_denied` con `actor` y `resource` enriquecido (`action`, `type`, `id`, `tenantId`, `endpoint`, `timestamp`).
+
+## Catálogo de eventos auditables (reportes)
+
+Eventos persistidos en `audit_logs`:
+
+- `report_created`: alta de reporte.
+- `report_updated`: actualización general de reporte.
+- `final_grade_changed`: cambio explícito de decisión final docente (`calificacionFinal`).
+- `report_deleted`: eliminación segura del reporte.
+
+Eventos de trazabilidad operacional en logs JSON (`stdout`):
+
+- `report_exported`: exportación exitosa de `GET /api/reportes/:id/export`.
+- `report_scope_denied`: denegación por alcance tenant/usuario en rutas de reporte.
+- `authentication_failed` y `authorization_denied`: denegaciones por autenticación/RBAC.
+
+Campos obligatorios de trazabilidad por evento auditable:
+
+- `actor`: `userId`, `role` (y `tenantId` en eventos de reporte).
+- `tenantId`: tenant efectivo del actor o del recurso.
+- `resource`: identificador de recurso (`id`), endpoint lógico y tipo.
+- `timestamp`: marca de tiempo ISO-8601 UTC.
+- `requestId`: correlación extremo a extremo (logs operacionales).
 
 ## Riesgos mitigados
 

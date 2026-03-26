@@ -10,7 +10,7 @@ const shouldUseJsonFallback = () => {
 
 let adapter;
 
-const insertOrUpdateReportGraphSql = ({ report, auditLog, normalized }) => `
+const insertOrUpdateReportGraphSql = ({ report, normalized, auditLogs = [] }) => `
   BEGIN IMMEDIATE TRANSACTION;
   INSERT OR REPLACE INTO schools (id, tenant_id, name, created_at, updated_at)
   VALUES (
@@ -91,7 +91,11 @@ const insertOrUpdateReportGraphSql = ({ report, auditLog, normalized }) => `
     ${sqlLiteral(report.updated_at)},
     ${sqlLiteral(report.payload_json)}
   );
+  ${auditLogs.map((auditLog) => insertAuditLogSql(auditLog)).join('\n')}
+  COMMIT;
+`;
 
+const insertAuditLogSql = (auditLog) => `
   INSERT INTO audit_logs (id, report_id, action, actor, created_at, metadata_json)
   VALUES (
     ${sqlLiteral(auditLog.id)},
@@ -101,6 +105,20 @@ const insertOrUpdateReportGraphSql = ({ report, auditLog, normalized }) => `
     ${sqlLiteral(auditLog.created_at)},
     ${sqlLiteral(auditLog.metadata_json)}
   );
+`;
+
+const deleteReportGraphSql = ({ reportId, submissionId }) => `
+  BEGIN IMMEDIATE TRANSACTION;
+  DELETE FROM reports WHERE id = ${sqlLiteral(reportId)};
+  DELETE FROM submissions WHERE id = ${sqlLiteral(submissionId)};
+  DELETE FROM exams
+  WHERE id NOT IN (SELECT DISTINCT exam_id FROM submissions WHERE exam_id IS NOT NULL);
+  DELETE FROM groups
+  WHERE id NOT IN (SELECT DISTINCT group_id FROM exams WHERE group_id IS NOT NULL);
+  DELETE FROM schools
+  WHERE id NOT IN (SELECT DISTINCT school_id FROM groups WHERE school_id IS NOT NULL);
+  DELETE FROM students
+  WHERE id NOT IN (SELECT DISTINCT student_id FROM submissions WHERE student_id IS NOT NULL);
   COMMIT;
 `;
 
@@ -111,9 +129,25 @@ const createSqlAdapter = async () => {
   return {
     mode: 'sqlite',
     filePath: getDatabasePath(),
-    async upsertReportGraph(reportRecord, normalizedRecord, auditLog) {
-      await client.exec(insertOrUpdateReportGraphSql({ report: reportRecord, normalized: normalizedRecord, auditLog }));
+    async upsertReportGraph(reportRecord, normalizedRecord, auditLogs = []) {
+      await client.exec(insertOrUpdateReportGraphSql({ report: reportRecord, normalized: normalizedRecord, auditLogs }));
       return reportRecord;
+    },
+    async deleteReportGraph(reportId, auditLogs = []) {
+      const report = await client.get(
+        `SELECT id, submission_id FROM reports WHERE id = ${sqlLiteral(reportId)};`
+      );
+      if (!report) {
+        return false;
+      }
+
+      const deleteSql = `
+        ${deleteReportGraphSql({ reportId, submissionId: report.submission_id })}
+        ${auditLogs.map((auditLog) => insertAuditLogSql(auditLog)).join('\n')}
+      `;
+      await client.exec(deleteSql);
+
+      return true;
     },
     async getReportRecordById(reportId) {
       const row = await client.get(

@@ -309,7 +309,11 @@ describe('backend/server API', () => {
         path: '/api/reportes',
         method: 'POST',
         headers: { 'x-actor': 'qa_tester' },
-        body: { ...created.json, estudiante: { ...created.json.estudiante, nombre: 'Ana Editada' } }
+        body: {
+          ...created.json,
+          estudiante: { ...created.json.estudiante, nombre: 'Ana Editada' },
+          calificacionFinal: { ...created.json.calificacionFinal, notaSobre100: 91, letra: 'A' }
+        }
       });
       expect(updated.status).toBe(200);
       expect(updated.json.estudiante.nombre).toBe('Ana Editada');
@@ -321,12 +325,16 @@ describe('backend/server API', () => {
       );
       const auditLogs = JSON.parse(rawLogs);
 
-      expect(auditLogs).toHaveLength(2);
-      expect(auditLogs.map((log) => log.action)).toEqual(['report_created', 'report_updated']);
+      expect(auditLogs).toHaveLength(3);
+      expect(auditLogs.map((log) => log.action)).toEqual(['report_created', 'report_updated', 'final_grade_changed']);
       expect(auditLogs[0].actor).toBe('qa_tester');
       expect(JSON.parse(auditLogs[0].metadata_json)).toMatchObject({
         tenantId: 'Instituto Central',
         sessionId: 'session-123'
+      });
+      expect(JSON.parse(auditLogs[2].metadata_json)).toMatchObject({
+        previousFinalGrade: expect.objectContaining({ notaSobre100: 80, letra: 'B' }),
+        nextFinalGrade: expect.objectContaining({ notaSobre100: 91, letra: 'A' })
       });
     } finally {
       await app.close();
@@ -673,7 +681,8 @@ describe('backend/server API', () => {
     const logSpy = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
     const app = await loadServer({ provider: 'openai' });
     const ownerToken = buildSessionToken({ role: 'docente', sub: 'u-owner', tenantId: 'tenant-owner', institution: 'inst-owner' });
-    const foreignToken = buildSessionToken({ role: 'auditor', sub: 'u-foreign', tenantId: 'tenant-foreign', institution: 'inst-foreign' });
+    const foreignAuditorToken = buildSessionToken({ role: 'auditor', sub: 'u-foreign-auditor', tenantId: 'tenant-foreign', institution: 'inst-foreign' });
+    const foreignCoordinatorToken = buildSessionToken({ role: 'coordinador', sub: 'u-foreign-coord', tenantId: 'tenant-foreign', institution: 'inst-foreign' });
 
     try {
       const unauthenticated = await apiRequest({
@@ -703,7 +712,7 @@ describe('backend/server API', () => {
         baseUrl: app.baseUrl,
         path: '/api/calificacion/sugerir',
         method: 'POST',
-        authToken: foreignToken,
+        authToken: foreignAuditorToken,
         body: basePayload
       });
       expect(forbiddenByRole.status).toBe(403);
@@ -711,17 +720,74 @@ describe('backend/server API', () => {
       const forbiddenByResource = await apiRequest({
         baseUrl: app.baseUrl,
         path: `/api/reportes/${created.json.id}/export`,
-        authToken: foreignToken
+        authToken: foreignCoordinatorToken
       });
       expect(forbiddenByResource.status).toBe(403);
 
       const rawLogs = logSpy.mock.calls.map(([line]) => String(line));
       expect(rawLogs.some((line) => line.includes('"event":"authentication_failed"'))).toBe(true);
       expect(rawLogs.some((line) => line.includes('"event":"authorization_denied"') && line.includes('"resource":"/api/calificacion/sugerir"'))).toBe(true);
-      expect(rawLogs.some((line) => line.includes('"event":"authorization_denied"') && line.includes('"resource":"/api/reportes/:id/export"'))).toBe(true);
+      expect(rawLogs.some((line) => line.includes('"event":"report_scope_denied"') && line.includes('"endpoint":"/api/reportes/:id/export"'))).toBe(true);
     } finally {
       await app.close();
       logSpy.mockRestore();
+    }
+  });
+
+  it('DELETE /api/reportes/:id elimina de forma segura y audita report_deleted', async () => {
+    const app = await loadServer({ provider: 'openai' });
+    const docenteToken = buildSessionToken({ role: 'docente', sub: 'u-docente-1', tenantId: 'tenant-1', institution: 'inst-1' });
+
+    try {
+      const created = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        authToken: docenteToken,
+        body: {
+          examen: { materia: 'Contabilidad', grupo: 'A', fecha: '2026-03-20', totalPreguntas: 10, claveRespuestas: 'ABCD' },
+          estudiante: { nombre: 'Ana', matricula: 'A1' },
+          respuestas: { lista: ['A', 'B'], texto: 'AB' },
+          puntuacionPorPregunta: [],
+          justificacionesIA: [],
+          calificacionFinal: { notaSobre100: 80, letra: 'B', justificacionDocente: 'Bien' }
+        }
+      });
+      expect(created.status).toBe(201);
+
+      const deleted = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/reportes/${created.json.id}`,
+        method: 'DELETE',
+        authToken: docenteToken,
+        headers: { 'x-actor': 'qa_delete_tester' }
+      });
+      expect(deleted.status).toBe(200);
+      expect(deleted.json.data.deleted).toBe(true);
+
+      const notFoundAfterDelete = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/reportes/${created.json.id}`,
+        authToken: docenteToken
+      });
+      expect(notFoundAfterDelete.status).toBe(404);
+
+      const rawLogs = execFileSync(
+        'sqlite3',
+        ['-json', process.env.REPORTS_DB_FILE, 'SELECT action, actor, metadata_json FROM audit_logs ORDER BY created_at ASC;'],
+        { encoding: 'utf-8' }
+      );
+      const auditLogs = JSON.parse(rawLogs);
+      expect(auditLogs.map((log) => log.action)).toContain('report_deleted');
+      const deletedAudit = auditLogs.find((log) => log.action === 'report_deleted');
+      expect(deletedAudit.actor).toBe('qa_delete_tester');
+      expect(JSON.parse(deletedAudit.metadata_json)).toMatchObject({
+        tenantId: 'tenant-1',
+        userId: 'u-docente-1',
+        resource: '/api/reportes/:id'
+      });
+    } finally {
+      await app.close();
     }
   });
 
