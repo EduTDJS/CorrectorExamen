@@ -2,6 +2,12 @@
 
 Frontend web para configurar, corregir y exportar resultados de exámenes.
 
+## Arquitectura
+
+- [Arquitectura del sistema](docs/architecture.md)
+- [Modelo de datos](docs/data-model.md)
+- [Seguridad](docs/security.md)
+
 ## Requisitos
 
 - Node.js 18+
