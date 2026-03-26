@@ -2,9 +2,15 @@ import { applyMigrations } from './migrate.js';
 import { getReportsStorageInfo } from './database.js';
 
 const run = async () => {
-  await applyMigrations();
+  const migrationResult = await applyMigrations();
   const info = await getReportsStorageInfo();
-  process.stdout.write(`Migraciones aplicadas en modo ${info.mode} (${info.filePath}).\n`);
+  const appliedLabel = migrationResult.applied.length
+    ? migrationResult.applied.map((m) => `v${m.version}:${m.name}`).join(', ')
+    : 'sin cambios';
+
+  process.stdout.write(
+    `Migraciones aplicadas (${appliedLabel}). Versión actual: v${migrationResult.latestVersion}. Modo ${info.mode} (${info.filePath}).\n`
+  );
 };
 
 run().catch((error) => {

@@ -81,15 +81,16 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
 6. El backend retorna un contrato normalizado estable y reporta eventos de failover/circuito en logs estructurados.
 7. El frontend usa ese contrato para autocompletar la decisión final editable.
 
-## Flujo de persistencia de reportes
+## Flujo de persistencia de reportes (transaccional end-to-end)
 
 1. `App.jsx` construye el objeto `reporte` final.
-2. `useReportes.guardarReporte` intenta guardar mediante `storageService.guardarReporteApi`.
-3. `backend/server.js` recibe `POST /api/reportes` y valida payload mínimo.
-4. `reportRepository` crea o actualiza el reporte en `reports`.
-5. El backend registra `report_created` o `report_updated` en `audit_logs` con actor técnico y timestamp.
-6. El frontend refresca estado local en memoria.
-7. Solo si el backend no está disponible, `useReportes` activa fallback controlado con `localStorage`.
+2. `useReportes.guardarReporte` intenta persistir vía `storageService.guardarReporteApi`.
+3. `backend/server.js` recibe `POST /api/reportes`, valida contrato mínimo y resuelve contexto de actor/tenant.
+4. `reportRepository` transforma el payload a modelo normalizado (`schools`, `groups`, `exams`, `students`, `submissions`, `grades`) y mantiene snapshot `reports` para compatibilidad.
+5. `database` ejecuta una sola transacción SQL (`BEGIN IMMEDIATE ... COMMIT`) con orden: upsert entidades núcleo -> upsert `reports` -> inserción en `audit_logs`.
+6. Si hay error, se aplica `ROLLBACK` y la API no expone estado parcial.
+7. En lectura (`GET /api/reportes`, `GET /api/reportes/:id`), el backend prioriza datos normalizados y usa `payload_json` como respaldo de compatibilidad.
+8. El frontend refresca estado local en memoria; solo si backend no está disponible, `useReportes` activa fallback controlado en `localStorage`.
 
 ### Política de persistencia frontend (backend-first)
 
