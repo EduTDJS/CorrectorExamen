@@ -361,7 +361,17 @@ const getReportAccessScope = (user = {}) => ({
   enforceUserScope: mustRestrictByUserId(user.role)
 });
 
-const sendForbiddenReportAccess = ({ res, requestId }) => {
+const sendForbiddenReportAccess = ({ req, res, requestId, resource }) => {
+  logEvent({
+    requestId,
+    event: 'authorization_denied',
+    method: req.method,
+    path: req.url || '/',
+    status: 403,
+    errorCode: 'auth_forbidden',
+    actor: req.user ? { userId: req.user.userId, role: req.user.role } : undefined,
+    resource
+  });
   sendJson(res, 403, {
     error: {
       message: 'Acceso denegado: el reporte pertenece a otro tenant o usuario.',
@@ -556,7 +566,7 @@ const handler = async (req, res) => {
     if (!reporte) {
       const existing = await getReportByIdUnscoped(reportId);
       if (existing) {
-        sendForbiddenReportAccess({ res, requestId });
+        sendForbiddenReportAccess({ req, res, requestId, resource: '/api/reportes/:id/export' });
         return;
       }
       sendJson(res, 404, {
@@ -596,7 +606,7 @@ const handler = async (req, res) => {
     if (!reporte) {
       const existing = await getReportByIdUnscoped(reportId);
       if (existing) {
-        sendForbiddenReportAccess({ res, requestId });
+        sendForbiddenReportAccess({ req, res, requestId, resource: '/api/reportes/:id' });
         return;
       }
       sendJson(res, 404, {
@@ -636,7 +646,7 @@ const handler = async (req, res) => {
       if (payloadId && !existe) {
         const existing = await getReportByIdUnscoped(payloadId);
         if (existing) {
-          sendForbiddenReportAccess({ res, requestId });
+          sendForbiddenReportAccess({ req, res, requestId, resource: '/api/reportes' });
           return;
         }
       }

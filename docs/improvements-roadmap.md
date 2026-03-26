@@ -19,6 +19,7 @@ Este documento resume mejoras de alto impacto para evolucionar **CalificaYa** de
 - **Métrica técnica**: p95 de validación de autorización < 50 ms en `/api/*` protegido y error rate de autorización incorrecta < 0.5% en staging.
 - **Gestión de secretos validada**: no hay secretos en frontend ni en repositorio (`0` hallazgos en escaneo de secretos del pipeline).
 - **Evidencia esperada**: tests de autorización (unit/integration), tablero de auditoría de eventos de seguridad y ADR de modelo RBAC/secret management.
+- **Casos mínimos auditados**: denegación `401` por sesión inválida/ausente, denegación `403` por rol sin permiso RBAC y denegación `403` por recurso fuera de tenant/ownership, todos con `actor`, `resource` y `timestamp` en logs.
 
 ## 2) Persistencia y escalabilidad (prioridad alta)
 

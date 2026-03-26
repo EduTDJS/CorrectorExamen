@@ -70,13 +70,13 @@ Acciones críticas y mapeo de endpoints:
 - `export_report` → `GET /api/reportes/:id/export`
 - `view_history` → `GET /api/reportes`, `GET /api/reportes/:id`
 
-Matriz de permisos inicial:
+Matriz de permisos final (marzo 2026):
 
-- `admin`: todas las acciones.
-- `docente`: todas las acciones.
-- `coordinador`: todas las acciones.
-- `corrector`: `correct_exam`, `view_history`.
-- `auditor`: `export_report`, `view_history`.
+- `admin`: `create_exam`, `correct_exam`, `export_report`, `view_history` (control total de plataforma).
+- `docente`: `create_exam`, `correct_exam`, `view_history` (opera su flujo, sin exportación).
+- `coordinador`: `correct_exam`, `export_report`, `view_history` (supervisión académica y exportaciones).
+- `corrector`: `correct_exam`, `view_history` (corrección operativa sin alta de reportes).
+- `auditor`: `view_history` (lectura para revisión y cumplimiento).
 
 Si el usuario está autenticado pero sin permiso, backend responde `403` con `error.code = "auth_forbidden"`.
 
@@ -85,12 +85,18 @@ Si el usuario está autenticado pero sin permiso, backend responde `403` con `er
 Los eventos de denegación se registran en JSON como:
 
 - `authentication_failed` (fallo de autenticación, 401)
-- `authorization_denied` (falta de permiso, 403)
+- `authorization_denied` (falta de permiso por rol o por recurso, 403)
 
 Ambos incluyen:
 
 - `actor`: `{ userId, role }` cuando la identidad está disponible.
 - `resource`: identificador del recurso o endpoint protegido.
+
+Casos auditados de denegación (trazabilidad de roadmap):
+
+- `401` por ausencia/token de sesión inválido sobre rutas protegidas (`/api/reportes`, `/api/reportes/:id/export`, `/api/calificacion/sugerir`): evento `authentication_failed`.
+- `403` por rol sin permiso RBAC (por ejemplo `auditor` o `coordinador` en `POST /api/reportes`): evento `authorization_denied`.
+- `403` por recurso fuera de alcance tenant/ownership (`/api/reportes/:id`, `/api/reportes/:id/export`): evento `authorization_denied` con `resource` del endpoint y `actor` autenticado.
 
 ## Riesgos mitigados
 
