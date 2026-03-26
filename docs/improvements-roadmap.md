@@ -112,10 +112,30 @@ Este documento resume mejoras de alto impacto para evolucionar **CalificaYa** de
 
 ## Primer sprint recomendado (2 semanas)
 
-1. Implementar autenticación básica + RBAC mínimo.
-2. Migrar reportes persistidos a base de datos.
-3. Añadir pruebas E2E del flujo crítico.
-4. Dashboard mínimo de latencia y errores de `/api/calificacion/sugerir`.
+### Secuencia por dependencias
+
+#### Iniciativas habilitadoras (primero)
+
+1. **Autenticación técnica base (sin RBAC completo)**  
+   Entregable mínimo: login funcional para usuario docente y sesión segura activa en endpoints críticos.
+2. **Esquema inicial de base de datos para reportes**  
+   Entregable mínimo: migración con tabla inicial de reportes + auditoría básica de creación/edición.
+
+#### Iniciativas consumidoras (dependen de las habilitadoras)
+
+3. **Flujo de persistencia de reportes hacia BD**  
+   Entregable mínimo: escritura/lectura de reportes desde la tabla nueva (sin versionado avanzado).
+4. **Prueba E2E crítica del flujo principal**  
+   Entregable mínimo: 1 E2E estable de configuración → corrección/sugerencia → revisión → persistencia en BD.
+5. **Panel operativo básico**  
+   Entregable mínimo: dashboard con 2 métricas visibles (`p95` de latencia y tasa de error de `/api/calificacion/sugerir`).
+
+### Fuera de alcance del sprint
+
+- RBAC completo por rol y matriz fina de permisos institucionales.
+- Fallback multi-proveedor completo con circuit breaker avanzado.
+- Banco de rúbricas reutilizables y reglas avanzadas de calibración.
+- Versionado completo de reportes con diff histórico por cada decisión docente.
 
 ## Definición de éxito inicial
 
