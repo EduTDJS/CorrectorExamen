@@ -56,6 +56,10 @@ describe('storageService', () => {
         { pregunta: 1, justificacion: 'Correcta' },
         { pregunta: 2, justificacion: 'Correcta' }
       ],
+      organizacion: {
+        materiaNormalizada: 'matematica',
+        materiaFolderId: 'materia:matematica'
+      },
       calificacionFinal: {
         notaSobre100: 100,
         letra: 'A',
@@ -76,6 +80,14 @@ describe('storageService', () => {
       expect(leerReportes()).toEqual([
         {
           ...reporteValido,
+          examen: {
+            ...reporteValido.examen,
+            materia: 'Matemática'
+          },
+          organizacion: {
+            materiaNormalizada: 'matematica',
+            materiaFolderId: 'materia:matematica'
+          },
           justificacionesIA: [
             { pregunta: 1, justificacion: 'Correcta' },
             { pregunta: 2, justificacion: 'Correcta' }
@@ -93,6 +105,27 @@ describe('storageService', () => {
 
       expect(leerReportes()).toEqual([reporteValido]);
     });
+
+    it('normaliza materia para evitar carpetas duplicadas semánticamente', () => {
+      const variante = {
+        ...reporteValido,
+        id: 'r-2',
+        examen: { ...reporteValido.examen, materia: '  MATEMATICA   ' }
+      };
+
+      guardarReportes([reporteValido, variante]);
+
+      const guardado = leerReportes();
+      expect(guardado).toHaveLength(2);
+      expect(guardado[0].organizacion).toEqual({
+        materiaNormalizada: 'matematica',
+        materiaFolderId: 'materia:matematica'
+      });
+      expect(guardado[1].organizacion).toEqual({
+        materiaNormalizada: 'matematica',
+        materiaFolderId: 'materia:matematica'
+      });
+    });
   });
 
   describe('guardar*', () => {
@@ -106,7 +139,7 @@ describe('storageService', () => {
       });
 
       expect(JSON.parse(window.localStorage.getItem(STORAGE_REPORTES))).toEqual({
-        schemaVersion: 2,
+        schemaVersion: 3,
         data: []
       });
     });

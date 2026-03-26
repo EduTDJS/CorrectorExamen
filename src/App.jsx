@@ -10,7 +10,7 @@ import { useReportes } from './hooks/useReportes';
 import { sugerirCalificacionIA } from './services/aiService';
 import { exportarGrupoCSV, exportarIndividualCSV, exportarIndividualPDF } from './services/exportService';
 import { procesarImagenOCR } from './services/ocrService';
-import { guardarDecisionFinal, leerDecisionFinal } from './services/storageService';
+import { guardarDecisionFinal, leerDecisionFinal, normalizarNombreMateria } from './services/storageService';
 import {
   convertirTextoALista,
   letrasValidas,
@@ -50,7 +50,14 @@ function App() {
   const [iaEstado, setIaEstado] = useState({ cargando: false, error: '', sugerencia: null });
   const [reporteActualRef, setReporteActualRef] = useState({ id: null, firma: null });
 
-  const { reportes, setReportes, filtrosHistorial, setFiltrosHistorial, reportesFiltrados } = useReportes();
+  const {
+    reportes,
+    setReportes,
+    filtrosHistorial,
+    setFiltrosHistorial,
+    reportesFiltrados,
+    reportesAgrupadosPorMateria
+  } = useReportes();
   const { pasoActual, estadoActual, avanzarPaso, retrocederPaso } = useExamWorkflow(pasos);
 
   useEffect(() => {
@@ -154,6 +161,11 @@ function App() {
   }, [reportesFiltrados]);
 
   const actualizarDato = (campo, valor) => setDatos((previo) => ({ ...previo, [campo]: valor }));
+  const obtenerMateriaCanonica = (materiaCruda) => {
+    const materiaNormalizada = normalizarNombreMateria(materiaCruda);
+    const materiaExistente = reportes.find((rep) => rep.organizacion?.materiaNormalizada === materiaNormalizada);
+    return materiaExistente?.examen.materia || materiaCruda.trim().replace(/\s+/g, ' ');
+  };
 
   const actualizarRespuesta = (indice, valor) => {
     setRespuestasLista((previo) => {
@@ -172,7 +184,8 @@ function App() {
   const validarPaso = (indice) => {
     const nuevosErrores = {};
     if (indice === 0) {
-      if (!datos.materia.trim()) nuevosErrores.materia = 'La materia es obligatoria.';
+      const materiaNormalizada = normalizarNombreMateria(datos.materia);
+      if (!materiaNormalizada) nuevosErrores.materia = 'La materia es obligatoria.';
       if (!datos.grupo.trim()) nuevosErrores.grupo = 'El grupo es obligatorio.';
       if (!datos.fecha) nuevosErrores.fecha = 'La fecha es obligatoria.';
       if (!datos.estudianteNombre.trim()) nuevosErrores.estudianteNombre = 'El nombre del estudiante es obligatorio.';
@@ -237,7 +250,13 @@ function App() {
   const generarReporteActual = (meta = {}) => ({
     id: meta.id || crypto.randomUUID(),
     creadoEn: meta.creadoEn || new Date().toISOString(),
-    examen: { materia: datos.materia, grupo: datos.grupo, fecha: datos.fecha, totalPreguntas: totalPreguntasNumero, claveRespuestas: claveLimpia },
+    examen: {
+      materia: obtenerMateriaCanonica(datos.materia),
+      grupo: datos.grupo,
+      fecha: datos.fecha,
+      totalPreguntas: totalPreguntasNumero,
+      claveRespuestas: claveLimpia
+    },
     estudiante: { nombre: datos.estudianteNombre, matricula: datos.estudianteMatricula },
     respuestas: { lista: respuestasLista, texto: respuestasLimpias },
     puntuacionPorPregunta: desglosePreguntas,
@@ -276,6 +295,10 @@ function App() {
 
   const textoManual = respuestasTextoLista.join('');
   const totalFilasTabla = totalPreguntasNumero > 0 ? totalPreguntasNumero : Math.max(respuestasLista.length, 1);
+  const exportarCarpetaMateriaCSV = (materiaFolderId) => {
+    const reportesCarpeta = reportesFiltrados.filter((rep) => rep.organizacion?.materiaFolderId === materiaFolderId);
+    exportarGrupoCSV(reportesCarpeta);
+  };
 
   return (
     <main className="contenedor">
@@ -342,8 +365,10 @@ function App() {
             filtrosHistorial={filtrosHistorial}
             setFiltrosHistorial={setFiltrosHistorial}
             reportesFiltrados={reportesFiltrados}
+            reportesAgrupadosPorMateria={reportesAgrupadosPorMateria}
             estadisticasGrupo={estadisticasGrupo}
             exportarGrupoCSV={() => exportarGrupoCSV(reportesFiltrados)}
+            exportarCarpetaMateriaCSV={exportarCarpetaMateriaCSV}
           />
         )}
       </section>
