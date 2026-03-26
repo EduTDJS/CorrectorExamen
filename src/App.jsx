@@ -48,6 +48,7 @@ function App() {
   const [panelAjustesAbierto, setPanelAjustesAbierto] = useState(false);
   const [decisionFinal, setDecisionFinal] = useState(() => leerDecisionFinal());
   const [iaEstado, setIaEstado] = useState({ cargando: false, error: '', sugerencia: null });
+  const [reporteActualRef, setReporteActualRef] = useState({ id: null, firma: null });
 
   const { reportes, setReportes, filtrosHistorial, setFiltrosHistorial, reportesFiltrados } = useReportes();
   const { pasoActual, estadoActual, avanzarPaso, retrocederPaso } = useExamWorkflow(pasos);
@@ -107,6 +108,44 @@ function App() {
 
   const notaFinalNumerica = Number(decisionFinal.puntuacion || resultadoRevision.puntaje || 0);
   const letraFinal = mapearLetraPucmm(notaFinalNumerica);
+
+  const firmaReporteActual = useMemo(() => JSON.stringify({
+    examen: {
+      materia: datos.materia,
+      grupo: datos.grupo,
+      fecha: datos.fecha,
+      totalPreguntas: totalPreguntasNumero,
+      claveRespuestas: claveLimpia
+    },
+    estudiante: {
+      nombre: datos.estudianteNombre,
+      matricula: datos.estudianteMatricula
+    },
+    respuestasLista,
+    respuestasTexto: respuestasLimpias,
+    puntuacionPorPregunta: desglosePreguntas,
+    calificacionFinal: {
+      notaSobre100: notaFinalNumerica,
+      letra: letraFinal,
+      justificacionDocente: decisionFinal.justificacion
+    }
+  }), [
+    claveLimpia,
+    datos.estudianteMatricula,
+    datos.estudianteNombre,
+    datos.fecha,
+    datos.grupo,
+    datos.materia,
+    decisionFinal.justificacion,
+    desglosePreguntas,
+    letraFinal,
+    notaFinalNumerica,
+    respuestasLimpias,
+    respuestasLista,
+    totalPreguntasNumero
+  ]);
+
+  const reporteActualGuardado = reporteActualRef.id !== null && reporteActualRef.firma === firmaReporteActual;
 
   const estadisticasGrupo = useMemo(() => {
     const distribucion = { A: 0, 'B+': 0, B: 0, 'C+': 0, C: 0, D: 0, F: 0 };
@@ -195,25 +234,42 @@ function App() {
     }
   };
 
-  const generarReporteActual = () => {
-    const reporte = {
-      id: crypto.randomUUID(),
-      creadoEn: new Date().toISOString(),
-      examen: { materia: datos.materia, grupo: datos.grupo, fecha: datos.fecha, totalPreguntas: totalPreguntasNumero, claveRespuestas: claveLimpia },
-      estudiante: { nombre: datos.estudianteNombre, matricula: datos.estudianteMatricula },
-      respuestas: { lista: respuestasLista, texto: respuestasLimpias },
-      puntuacionPorPregunta: desglosePreguntas,
-      justificacionesIA: desglosePreguntas.map((item) => ({ pregunta: item.numero, justificacion: item.justificacionIA })),
-      calificacionFinal: { notaSobre100: notaFinalNumerica, letra: letraFinal, justificacionDocente: decisionFinal.justificacion }
-    };
+  const generarReporteActual = (meta = {}) => ({
+    id: meta.id || crypto.randomUUID(),
+    creadoEn: meta.creadoEn || new Date().toISOString(),
+    examen: { materia: datos.materia, grupo: datos.grupo, fecha: datos.fecha, totalPreguntas: totalPreguntasNumero, claveRespuestas: claveLimpia },
+    estudiante: { nombre: datos.estudianteNombre, matricula: datos.estudianteMatricula },
+    respuestas: { lista: respuestasLista, texto: respuestasLimpias },
+    puntuacionPorPregunta: desglosePreguntas,
+    justificacionesIA: desglosePreguntas.map((item) => ({ pregunta: item.numero, justificacion: item.justificacionIA })),
+    calificacionFinal: { notaSobre100: notaFinalNumerica, letra: letraFinal, justificacionDocente: decisionFinal.justificacion }
+  });
 
-    setReportes((previo) => [reporte, ...previo]);
-    return reporte;
+  const guardarReporte = () => {
+    if (!validarPaso(3)) return;
+
+    const reporteGuardadoPrevio = reporteActualRef.id ? reportes.find((rep) => rep.id === reporteActualRef.id) : null;
+    const reporte = generarReporteActual({
+      id: reporteGuardadoPrevio?.id,
+      creadoEn: reporteGuardadoPrevio?.creadoEn
+    });
+
+    setReportes((previo) => {
+      if (!reporteGuardadoPrevio) return [reporte, ...previo];
+      return previo.map((item) => (item.id === reporte.id ? reporte : item));
+    });
+
+    setReporteActualRef({ id: reporte.id, firma: firmaReporteActual });
   };
 
-  const guardarYExportar = (tipo) => {
+  const exportarReporteActual = (tipo) => {
     if (!validarPaso(3)) return;
-    const reporte = generarReporteActual();
+
+    const reportePersistido = reporteActualGuardado && reporteActualRef.id
+      ? reportes.find((rep) => rep.id === reporteActualRef.id)
+      : null;
+    const reporte = reportePersistido || generarReporteActual();
+
     if (tipo === 'pdf') exportarIndividualPDF(reporte);
     if (tipo === 'csv') exportarIndividualCSV(reporte);
   };
@@ -280,7 +336,9 @@ function App() {
             decisionFinal={decisionFinal}
             setDecisionFinal={setDecisionFinal}
             errores={errores}
-            guardarYExportar={guardarYExportar}
+            guardarReporte={guardarReporte}
+            exportarReporteActual={exportarReporteActual}
+            reporteActualGuardado={reporteActualGuardado}
             filtrosHistorial={filtrosHistorial}
             setFiltrosHistorial={setFiltrosHistorial}
             reportesFiltrados={reportesFiltrados}

@@ -76,8 +76,9 @@ src/
 2. Ingreso de respuestas (manual u OCR).
 3. Scoring automático.
 4. Sugerencia IA vía backend propio.
-5. Ajuste docente final y exportación.
-6. Historial local de reportes con filtros.
+5. Ajuste docente final con guardado explícito del reporte.
+6. Exportación individual (PDF/CSV) desde reporte guardado o snapshot actual, sin duplicar historial.
+7. Historial local de reportes con filtros.
 
 ## Integración de IA (estado actual)
 

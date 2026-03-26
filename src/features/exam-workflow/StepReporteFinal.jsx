@@ -5,7 +5,9 @@ function StepReporteFinal({
   decisionFinal,
   setDecisionFinal,
   errores,
-  guardarYExportar,
+  guardarReporte,
+  exportarReporteActual,
+  reporteActualGuardado,
   filtrosHistorial,
   setFiltrosHistorial,
   reportesFiltrados,
@@ -31,9 +33,17 @@ function StepReporteFinal({
         {errores.decisionFinal && <p className="error">{errores.decisionFinal}</p>}
       </div>
 
+      <div className="resumen">
+        <p>
+          Estado del reporte actual:{' '}
+          <strong>{reporteActualGuardado ? 'Guardado' : 'No guardado'}</strong>
+        </p>
+      </div>
+
       <div className="acciones-ajustes">
-        <button type="button" onClick={() => guardarYExportar('pdf')}>Guardar y exportar PDF</button>
-        <button type="button" onClick={() => guardarYExportar('csv')}>Guardar y exportar CSV</button>
+        <button type="button" onClick={guardarReporte}>Guardar reporte</button>
+        <button type="button" onClick={() => exportarReporteActual('pdf')}>Exportar PDF</button>
+        <button type="button" onClick={() => exportarReporteActual('csv')}>Exportar CSV</button>
       </div>
 
       <h3>Vista de grupo e historial</h3>
