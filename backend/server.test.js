@@ -2,8 +2,9 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 
 const ORIGINAL_ENV = { ...process.env };
 let tempDir = '';
@@ -81,7 +82,7 @@ const loadServer = async ({
   process.env.RATE_LIMIT_MAX_REQUESTS_ADMIN = String(rateLimitMaxRequestsAdmin);
   process.env.RATE_LIMIT_NEAR_THRESHOLD_RATIO = String(rateLimitNearThresholdRatio);
   process.env.SESSION_TOKEN_SECRET = sessionSecret;
-  process.env.REPORTS_DB_FILE = path.join(tempDir, 'reports-db.json');
+  process.env.REPORTS_DB_FILE = path.join(tempDir, 'reports-db.sqlite');
 
   if (provider === 'anthropic' || secondaryProvider === 'anthropic') {
     process.env.ANTHROPIC_API_KEY = anthropicKey;
@@ -103,6 +104,10 @@ const loadServer = async ({
     baseUrl,
     close: async () => {
       await new Promise((resolve) => mod.server.close(resolve));
+      const { closeDbPool } = await import('./db/pool.js');
+      const { resetMigrationStateForTests } = await import('./db/migrate.js');
+      closeDbPool();
+      resetMigrationStateForTests();
     }
   };
 };
@@ -304,10 +309,16 @@ describe('backend/server API', () => {
       expect(updated.status).toBe(200);
       expect(updated.json.estudiante.nombre).toBe('Ana Editada');
 
-      const db = JSON.parse(await readFile(process.env.REPORTS_DB_FILE, 'utf-8'));
-      expect(db.audit_logs).toHaveLength(2);
-      expect(db.audit_logs.map((log) => log.action)).toEqual(['report_created', 'report_updated']);
-      expect(db.audit_logs[0].actor).toBe('qa_tester');
+      const rawLogs = execFileSync(
+        'sqlite3',
+        ['-json', process.env.REPORTS_DB_FILE, 'SELECT action, actor FROM audit_logs ORDER BY created_at ASC;'],
+        { encoding: 'utf-8' }
+      );
+      const auditLogs = JSON.parse(rawLogs);
+
+      expect(auditLogs).toHaveLength(2);
+      expect(auditLogs.map((log) => log.action)).toEqual(['report_created', 'report_updated']);
+      expect(auditLogs[0].actor).toBe('qa_tester');
     } finally {
       await app.close();
     }

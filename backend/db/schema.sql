@@ -1,4 +1,4 @@
--- Esquema inicial de persistencia para reportes del sprint
+-- Esquema relacional de persistencia para reportes y auditoría
 
 CREATE TABLE IF NOT EXISTS reports (
   id TEXT PRIMARY KEY,
@@ -16,3 +16,6 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   metadata_json TEXT,
   FOREIGN KEY (report_id) REFERENCES reports(id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_reports_created_at ON reports(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_report_created_at ON audit_logs(report_id, created_at DESC);
