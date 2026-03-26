@@ -51,7 +51,7 @@ const getById = (db, reportId) => db.reports.find((report) => report.id === repo
 export const createJsonFallbackAdapter = () => ({
   mode: 'json_fallback',
   filePath: DB_FILE,
-  async upsertReportGraph(reportRecord, _normalizedRecord, auditLog) {
+  async upsertReportGraph(reportRecord, _normalizedRecord, auditLogs = []) {
     const db = await readDatabase();
     const index = db.reports.findIndex((report) => report.id === reportRecord.id);
 
@@ -61,9 +61,21 @@ export const createJsonFallbackAdapter = () => ({
       db.reports[index] = reportRecord;
     }
 
-    db.audit_logs.push(auditLog);
+    db.audit_logs.push(...auditLogs);
     await writeDatabase(db);
     return reportRecord;
+  },
+  async deleteReportGraph(reportId, auditLogs = []) {
+    const db = await readDatabase();
+    const index = db.reports.findIndex((report) => report.id === reportId);
+    if (index === -1) {
+      return false;
+    }
+
+    db.reports.splice(index, 1);
+    db.audit_logs.push(...auditLogs);
+    await writeDatabase(db);
+    return true;
   },
   async getReportRecordById(reportId) {
     const db = await readDatabase();

@@ -5,7 +5,8 @@ import {
   getReportById,
   getReportByIdUnscoped,
   listReports,
-  updateReport
+  updateReport,
+  deleteReport
 } from './repositories/reportRepository.js';
 import { AuthError, authenticate } from './middleware/auth.js';
 import { AuthorizationError, authorize } from './middleware/authorize.js';
@@ -362,15 +363,23 @@ const getReportAccessScope = (user = {}) => ({
 });
 
 const sendForbiddenReportAccess = ({ req, res, requestId, resource }) => {
+  const reportId = decodeURIComponent((req.url || '').replace('/api/reportes/', '').replace('/export', '').trim());
   logEvent({
     requestId,
-    event: 'authorization_denied',
+    event: 'report_scope_denied',
     method: req.method,
     path: req.url || '/',
     status: 403,
     errorCode: 'auth_forbidden',
     actor: req.user ? { userId: req.user.userId, role: req.user.role } : undefined,
-    resource
+    resource: {
+      action: 'scope_validation',
+      type: 'report',
+      id: reportId || 'unknown',
+      tenantId: req.user?.tenantId || req.user?.institution,
+      endpoint: resource,
+      timestamp: new Date().toISOString()
+    }
   });
   sendJson(res, 403, {
     error: {
@@ -379,6 +388,25 @@ const sendForbiddenReportAccess = ({ req, res, requestId, resource }) => {
       requestId
     }
   }, { requestId });
+};
+
+const logReportAuditEvent = ({ requestId, req, event, reportId, status, action, resource }) => {
+  logEvent({
+    requestId,
+    event,
+    method: req.method,
+    path: req.url || '/',
+    status,
+    actor: req.user ? { userId: req.user.userId, role: req.user.role, tenantId: req.user.tenantId || req.user.institution } : undefined,
+    resource: {
+      action,
+      type: 'report',
+      id: reportId,
+      tenantId: req.user?.tenantId || req.user?.institution,
+      endpoint: resource,
+      timestamp: new Date().toISOString()
+    }
+  });
 };
 
 const handler = async (req, res) => {
@@ -582,6 +610,89 @@ const handler = async (req, res) => {
     sendJson(res, 200, {
       data: reporte,
       export: { format: 'json', generatedAt: new Date().toISOString() }
+    }, { requestId });
+    logReportAuditEvent({
+      requestId,
+      req,
+      event: 'report_exported',
+      reportId,
+      status: 200,
+      action: 'export_report',
+      resource: '/api/reportes/:id/export'
+    });
+    return;
+  }
+
+  if (req.method === 'DELETE' && req.url?.startsWith('/api/reportes/')) {
+    const accessResult = await runProtectedAction({
+      req,
+      res,
+      requestId,
+      action: 'delete_report',
+      resource: '/api/reportes/:id',
+      onAllowed: async () => true
+    });
+    if (!accessResult) {
+      return;
+    }
+
+    const reportId = decodeURIComponent(req.url.replace('/api/reportes/', '').trim());
+    const accessScope = getReportAccessScope(req.user);
+    const existingScoped = await getReportById(reportId, accessScope);
+    if (!existingScoped) {
+      const existing = await getReportByIdUnscoped(reportId);
+      if (existing) {
+        sendForbiddenReportAccess({ req, res, requestId, resource: '/api/reportes/:id' });
+        return;
+      }
+      sendJson(res, 404, {
+        error: {
+          message: 'Reporte no encontrado.',
+          code: API_ERRORS.NOT_FOUND,
+          requestId
+        }
+      }, { requestId });
+      return;
+    }
+
+    const deleted = await deleteReport(reportId, {
+      actor: String(req.headers['x-actor'] || req.user?.userId || 'frontend_tecnico').trim() || 'frontend_tecnico',
+      auditMetadata: {
+        tenantId: req.user?.tenantId || req.user?.institution,
+        userId: req.user?.userId,
+        role: req.user?.role,
+        sessionId: req.user?.sessionId,
+        resource: '/api/reportes/:id',
+        timestamp: new Date().toISOString()
+      }
+    });
+
+    if (!deleted) {
+      sendJson(res, 404, {
+        error: {
+          message: 'Reporte no encontrado.',
+          code: API_ERRORS.NOT_FOUND,
+          requestId
+        }
+      }, { requestId });
+      return;
+    }
+
+    logReportAuditEvent({
+      requestId,
+      req,
+      event: 'report_deleted',
+      reportId,
+      status: 200,
+      action: 'delete_report',
+      resource: '/api/reportes/:id'
+    });
+    sendJson(res, 200, {
+      data: {
+        id: reportId,
+        deleted: true,
+        deletedAt: new Date().toISOString()
+      }
     }, { requestId });
     return;
   }

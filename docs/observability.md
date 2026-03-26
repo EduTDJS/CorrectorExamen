@@ -29,6 +29,10 @@ Este documento define el formato de logs del backend (`backend/server.js`) para 
    - Se emite cuando el consumo está cerca del umbral o cuando ya hay rechazo (`429`).
 6. `request_completed`
    - Se emite al finalizar (éxito o error), con status HTTP, duración y `errorCode` cuando aplique.
+7. `report_exported`
+   - Se emite al completar una exportación exitosa (`GET /api/reportes/:id/export`).
+8. `report_scope_denied`
+   - Se emite cuando un reporte existe, pero el actor autenticado no tiene alcance tenant/usuario sobre el recurso.
 
 ## Formato JSON de logs
 
@@ -38,7 +42,7 @@ Campos base:
 
 - `timestamp` (ISO-8601 UTC)
 - `level` (`info` | `error`)
-- `event` (`request_started` | `provider_selected` | `provider_failover` | `provider_circuit_*` | `rate_limit_saturation` | `request_completed`)
+- `event` (`request_started` | `provider_selected` | `provider_failover` | `provider_circuit_*` | `rate_limit_saturation` | `request_completed` | `report_exported` | `report_scope_denied`)
 - `requestId`
 - `method`
 - `path`
@@ -56,6 +60,25 @@ Campos opcionales por evento:
 - `circuitState` (`closed` | `open` | `half_open`)
 - `attempts` (intentos y códigos de error por proveedor)
 - `rateLimit` (métricas de bucket: `key`, `role`, `tenantId`, `userId`, `count`, `maxRequests`, `windowMs`, `remainingMs`, `thresholdRatio`, `nearThreshold`, `rejected`)
+- `actor` (cuando aplica: `userId`, `role`, `tenantId`)
+- `resource` (en eventos de reporte: `action`, `type`, `id`, `tenantId`, `endpoint`, `timestamp`)
+
+## Catálogo de auditoría de negocio (`audit_logs`)
+
+Eventos persistidos:
+
+- `report_created`
+- `report_updated`
+- `final_grade_changed`
+- `report_deleted`
+
+Campos obligatorios de trazabilidad:
+
+- `tenantId`
+- `actor` (`userId`, `role`)
+- `resource` (tipo + id + endpoint cuando aplique)
+- `timestamp` (ISO-8601 UTC)
+- `requestId` (logs operacionales)
 
 ## Política de datos sensibles
 
