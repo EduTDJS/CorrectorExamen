@@ -13,12 +13,19 @@ body {
 }
 
 .contenedor {
-  max-width: 880px;
+  max-width: 920px;
   margin: 2rem auto;
   background: #fff;
   border-radius: 14px;
   padding: 2rem;
   box-shadow: 0 10px 24px rgba(10, 30, 80, 0.08);
+}
+
+.barra-superior {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
 }
 
 .subtitulo {
@@ -52,6 +59,10 @@ body {
   border: 1px solid #e5e7eb;
   border-radius: 12px;
   padding: 1rem;
+}
+
+.ajustes {
+  background: #f8fafc;
 }
 
 .paso {
@@ -103,7 +114,9 @@ button[disabled] {
 }
 
 .resumen,
-.resumen-final {
+.resumen-final,
+.sugerencia-ia,
+.decision-final {
   background: #f8fafc;
   border-radius: 10px;
   padding: 0.75rem 1rem;
@@ -140,6 +153,7 @@ button[disabled] {
   max-height: 180px;
 }
 
+.acciones-ajustes,
 .acciones {
   margin-top: 1rem;
   display: flex;

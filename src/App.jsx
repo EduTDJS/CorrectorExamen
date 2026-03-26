@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Tesseract from 'tesseract.js';
 
 const pasos = [
@@ -8,6 +8,9 @@ const pasos = [
   'Reporte final y exportación'
 ];
 
+const STORAGE_API_KEY = 'corrector_anthropic_api_key';
+const STORAGE_DECISION_FINAL = 'corrector_decision_final';
+
 const formularioInicial = {
   materia: '',
   grupo: '',
@@ -16,6 +19,11 @@ const formularioInicial = {
   claveRespuestas: '',
   modoIngreso: 'transcripcion',
   archivoImagen: null
+};
+
+const decisionFinalInicial = {
+  puntuacion: '',
+  justificacion: ''
 };
 
 const estadoAsyncInicial = {
@@ -70,6 +78,69 @@ const parsearOCRPorNumeroPregunta = (textoOCR, totalPreguntas) => {
   return convertirTextoALista(textoOCR, total);
 };
 
+const extraerJsonDeTexto = (texto = '') => {
+  const bloque = texto.match(/\{[\s\S]*\}/);
+  if (!bloque) {
+    throw new Error('La IA respondió en un formato no válido.');
+  }
+
+  return JSON.parse(bloque[0]);
+};
+
+const construirPromptContable = ({
+  materia,
+  grupo,
+  fecha,
+  totalPreguntas,
+  claveLimpia,
+  respuestasLimpias,
+  resultadoRevision
+}) => {
+  return [
+    'Eres una profesora experta en contabilidad y evaluación formativa.',
+    'Evalúa la resolución de un examen usando criterios contables estrictos y devuelve una sugerencia final.',
+    '',
+    'Criterios obligatorios de análisis contable:',
+    '1) Asientos contables: estructura correcta y cuentas involucradas.',
+    '2) Débitos y créditos: naturaleza de las cuentas y equilibrio del registro.',
+    '3) Cálculos: exactitud numérica, redondeos y coherencia de resultados.',
+    '4) Procedimiento: secuencia lógica y orden de los pasos de resolución.',
+    '5) Conceptos: uso correcto de principios y terminología contable.',
+    '',
+    'Datos del examen:',
+    `- Materia: ${materia}`,
+    `- Grupo: ${grupo}`,
+    `- Fecha: ${fecha}`,
+    `- Total de preguntas: ${totalPreguntas}`,
+    `- Clave oficial: ${claveLimpia}`,
+    `- Respuestas del estudiante: ${respuestasLimpias}`,
+    `- Aciertos automáticos detectados: ${resultadoRevision.aciertos}`,
+    `- Errores automáticos detectados: ${resultadoRevision.errores}`,
+    `- Puntaje automático actual: ${resultadoRevision.puntaje.toFixed(2)} / 100`,
+    '',
+    'Responde SOLO en JSON válido con este formato exacto:',
+    '{"puntuacion_sugerida": number, "justificacion_breve": "texto breve en español"}',
+    'La puntuación debe estar entre 0 y 100.'
+  ].join('\n');
+};
+
+const leerApiKey = () => window.localStorage.getItem(STORAGE_API_KEY) || '';
+
+const leerDecisionFinal = () => {
+  const crudo = window.localStorage.getItem(STORAGE_DECISION_FINAL);
+  if (!crudo) return decisionFinalInicial;
+
+  try {
+    const parseado = JSON.parse(crudo);
+    return {
+      puntuacion: parseado?.puntuacion || '',
+      justificacion: parseado?.justificacion || ''
+    };
+  } catch {
+    return decisionFinalInicial;
+  }
+};
+
 function App() {
   const [pasoActual, setPasoActual] = useState(0);
   const [datos, setDatos] = useState(formularioInicial);
@@ -84,6 +155,22 @@ function App() {
     error: '',
     textoDetectado: ''
   });
+  const [panelAjustesAbierto, setPanelAjustesAbierto] = useState(false);
+  const [apiKeyTemporal, setApiKeyTemporal] = useState('');
+  const [decisionFinal, setDecisionFinal] = useState(() => leerDecisionFinal());
+  const [iaEstado, setIaEstado] = useState({
+    cargando: false,
+    error: '',
+    sugerencia: null
+  });
+
+  useEffect(() => {
+    setApiKeyTemporal(leerApiKey());
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(STORAGE_DECISION_FINAL, JSON.stringify(decisionFinal));
+  }, [decisionFinal]);
 
   const totalPreguntasNumero = Number(datos.totalPreguntas);
 
@@ -194,6 +281,11 @@ function App() {
         nuevosErrores.reporte =
           'Complete los datos de configuración para generar el reporte final.';
       }
+
+      if (!decisionFinal.puntuacion || !decisionFinal.justificacion.trim()) {
+        nuevosErrores.decisionFinal =
+          'Debe registrar puntuación y justificación final de la profesora.';
+      }
     }
 
     setErrores(nuevosErrores);
@@ -244,6 +336,116 @@ function App() {
     }
   };
 
+  const sugerirCalificacionConIA = async () => {
+    const apiKey = leerApiKey();
+
+    if (!apiKey) {
+      setIaEstado({
+        cargando: false,
+        error: 'No hay API key configurada. Abra Ajustes y guarde su API key de Anthropic.',
+        sugerencia: null
+      });
+      return;
+    }
+
+    setIaEstado({ cargando: true, error: '', sugerencia: null });
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+    try {
+      const prompt = construirPromptContable({
+        materia: datos.materia,
+        grupo: datos.grupo,
+        fecha: datos.fecha,
+        totalPreguntas: datos.totalPreguntas,
+        claveLimpia,
+        respuestasLimpias,
+        resultadoRevision
+      });
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 250,
+          temperature: 0.2,
+          messages: [{ role: 'user', content: prompt }]
+        }),
+        signal: controller.signal
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        const tipoError = data?.error?.type;
+
+        if (response.status === 401 || tipoError === 'authentication_error') {
+          throw new Error('API key inválida o sin permisos. Verifique su API key en Ajustes.');
+        }
+
+        if (response.status === 429 || tipoError === 'rate_limit_error') {
+          throw new Error('Se alcanzó el límite de cuota o tasa de peticiones de Anthropic. Intente más tarde.');
+        }
+
+        throw new Error(data?.error?.message || 'Error inesperado al consultar Anthropic.');
+      }
+
+      const textoIa = (data?.content || [])
+        .filter((bloque) => bloque?.type === 'text')
+        .map((bloque) => bloque.text)
+        .join('\n');
+
+      const jsonParseado = extraerJsonDeTexto(textoIa);
+      const puntuacionNormalizada = Number(jsonParseado.puntuacion_sugerida);
+
+      if (Number.isNaN(puntuacionNormalizada) || puntuacionNormalizada < 0 || puntuacionNormalizada > 100) {
+        throw new Error('La IA devolvió una puntuación fuera de rango (0-100).');
+      }
+
+      const sugerencia = {
+        puntuacion: puntuacionNormalizada.toFixed(2),
+        justificacion: String(jsonParseado.justificacion_breve || '').trim()
+      };
+
+      setIaEstado({ cargando: false, error: '', sugerencia });
+      setDecisionFinal(sugerencia);
+      setErrores((previo) => ({ ...previo, decisionFinal: '' }));
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        setIaEstado({
+          cargando: false,
+          error: 'La solicitud excedió el tiempo límite (20s). Intente de nuevo.',
+          sugerencia: null
+        });
+      } else {
+        setIaEstado({
+          cargando: false,
+          error: error?.message || 'No se pudo obtener sugerencia de IA.',
+          sugerencia: null
+        });
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
+  const guardarApiKey = () => {
+    window.localStorage.setItem(STORAGE_API_KEY, apiKeyTemporal.trim());
+    window.alert('API key guardada localmente en este navegador.');
+  };
+
+  const eliminarApiKey = () => {
+    window.localStorage.removeItem(STORAGE_API_KEY);
+    setApiKeyTemporal('');
+    window.alert('API key eliminada.');
+  };
+
   const avanzarPaso = async () => {
     if (!validarPaso(pasoActual)) return;
 
@@ -287,8 +489,35 @@ function App() {
 
   return (
     <main className="contenedor">
-      <h1>Corrector de Exámenes</h1>
-      <p className="subtitulo">Flujo guiado de evaluación automática</p>
+      <div className="barra-superior">
+        <div>
+          <h1>Corrector de Exámenes</h1>
+          <p className="subtitulo">Flujo guiado de evaluación automática</p>
+        </div>
+        <button type="button" onClick={() => setPanelAjustesAbierto((previo) => !previo)}>
+          {panelAjustesAbierto ? 'Cerrar ajustes' : 'Ajustes API'}
+        </button>
+      </div>
+
+      {panelAjustesAbierto && (
+        <section className="panel ajustes">
+          <h2>Ajustes</h2>
+          <label>
+            API key de Anthropic
+            <input
+              type="password"
+              value={apiKeyTemporal}
+              onChange={(e) => setApiKeyTemporal(e.target.value)}
+              placeholder="sk-ant-..."
+            />
+          </label>
+          <p className="detalle">La API key se guarda en localStorage del navegador, sin hardcodearse.</p>
+          <div className="acciones-ajustes">
+            <button type="button" onClick={guardarApiKey}>Guardar API key</button>
+            <button type="button" onClick={eliminarApiKey}>Eliminar API key</button>
+          </div>
+        </section>
+      )}
 
       <ol className="pasos">
         {pasos.map((paso, indice) => (
@@ -473,6 +702,20 @@ function App() {
               <p>Porcentaje: {resultadoRevision.porcentaje.toFixed(2)}%</p>
               <p>Puntaje: {resultadoRevision.puntaje.toFixed(2)} / 100</p>
             </div>
+
+            <button type="button" onClick={sugerirCalificacionConIA} disabled={iaEstado.cargando}>
+              {iaEstado.cargando ? 'Consultando IA...' : 'Sugerir calificación con IA (Anthropic)'}
+            </button>
+
+            {iaEstado.error && <p className="error">{iaEstado.error}</p>}
+
+            {iaEstado.sugerencia && (
+              <div className="sugerencia-ia">
+                <h3>Sugerencia de IA</h3>
+                <p>Puntuación sugerida: {iaEstado.sugerencia.puntuacion}</p>
+                <p>Justificación: {iaEstado.sugerencia.justificacion}</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -484,8 +727,40 @@ function App() {
               <li>Materia: {datos.materia || 'Sin definir'}</li>
               <li>Grupo: {datos.grupo || 'Sin definir'}</li>
               <li>Fecha: {datos.fecha || 'Sin definir'}</li>
-              <li>Puntaje final: {resultadoRevision.puntaje.toFixed(2)} / 100</li>
+              <li>Puntaje automático: {resultadoRevision.puntaje.toFixed(2)} / 100</li>
             </ul>
+
+            <div className="decision-final">
+              <h3>Decisión final de la profesora</h3>
+              <label>
+                Puntuación final (0-100)
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={decisionFinal.puntuacion}
+                  onChange={(e) =>
+                    setDecisionFinal((previo) => ({ ...previo, puntuacion: e.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Justificación final
+                <textarea
+                  rows="3"
+                  value={decisionFinal.justificacion}
+                  onChange={(e) =>
+                    setDecisionFinal((previo) => ({ ...previo, justificacion: e.target.value }))
+                  }
+                />
+              </label>
+              {errores.decisionFinal && <p className="error">{errores.decisionFinal}</p>}
+              <p className="detalle">
+                Este valor se persiste siempre como decisión final, incluso si se modifica la sugerencia de IA.
+              </p>
+            </div>
+
             <button
               type="button"
               onClick={exportarReporte}
