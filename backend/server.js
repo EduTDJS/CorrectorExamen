@@ -398,6 +398,10 @@ const server = http.createServer((req, res) => {
   handler(req, res);
 });
 
-server.listen(PORT, () => {
-  console.log(`Backend de CalificaYa escuchando en http://localhost:${PORT} usando proveedor ${activeProvider.name}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  server.listen(PORT, () => {
+    console.log(`Backend de CalificaYa escuchando en http://localhost:${PORT} usando proveedor ${activeProvider.name}`);
+  });
+}
+
+export { server, handler };

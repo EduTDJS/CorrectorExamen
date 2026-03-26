@@ -43,7 +43,8 @@ Flujo recomendado antes de abrir PR:
 
 ```text
 backend/
-└── server.js                            # API interna /api/calificacion/sugerir
+├── server.js                            # API interna /api/calificacion/sugerir
+└── server.test.js                       # Pruebas Vitest del contrato HTTP y errores de proveedor
 
 src/
 ├── App.jsx                              # Orquestador del flujo y composición de UI
