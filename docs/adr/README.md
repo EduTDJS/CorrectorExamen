@@ -32,6 +32,7 @@ Cada ADR debe incluir estas secciones mínimas:
 - [0007 - Persistencia de reportes en backend con auditoría](0007-persistencia-reportes-en-backend-con-auditoria.md)
 - [0008 - Modelo de identidad mínimo y RBAC en backend](0008-modelo-rbac-y-sesion-token.md)
 - [0009 - Resiliencia IA con orquestador, fallback y circuit breaker](0009-resiliencia-ia-orquestador-fallback-circuit-breaker.md)
+- [0010 - Matriz RBAC final y auditoría de denegaciones por recurso](0010-rbac-matriz-final-y-auditoria-de-denegaciones.md)
 
 ## Nota de nomenclatura
 

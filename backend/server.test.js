@@ -336,7 +336,7 @@ describe('backend/server API', () => {
   it('permite acceder reportes dentro del mismo tenant', async () => {
     const app = await loadServer({ provider: 'openai' });
     const ownerToken = buildSessionToken({ sub: 'u-docente-owner', role: 'docente', tenantId: 'tenant-1', institution: 'inst-1' });
-    const tenantAuditorToken = buildSessionToken({ sub: 'u-auditor-1', role: 'auditor', tenantId: 'tenant-1', institution: 'inst-1' });
+    const tenantCoordinatorToken = buildSessionToken({ sub: 'u-coord-1', role: 'coordinador', tenantId: 'tenant-1', institution: 'inst-1' });
 
     try {
       const created = await apiRequest({
@@ -358,14 +358,14 @@ describe('backend/server API', () => {
       const byId = await apiRequest({
         baseUrl: app.baseUrl,
         path: `/api/reportes/${created.json.id}`,
-        authToken: tenantAuditorToken
+        authToken: tenantCoordinatorToken
       });
       expect(byId.status).toBe(200);
 
       const exported = await apiRequest({
         baseUrl: app.baseUrl,
         path: `/api/reportes/${created.json.id}/export`,
-        authToken: tenantAuditorToken
+        authToken: tenantCoordinatorToken
       });
       expect(exported.status).toBe(200);
     } finally {
@@ -547,11 +547,11 @@ describe('backend/server API', () => {
       });
       expect(created.status).toBe(201);
 
-      const auditorToken = buildSessionToken({ role: 'auditor', sub: 'u-auditor-1', sessionId: 'session-444' });
+      const coordinadorToken = buildSessionToken({ role: 'coordinador', sub: 'u-coord-1', sessionId: 'session-444' });
       const exported = await apiRequest({
         baseUrl: app.baseUrl,
         path: `/api/reportes/${created.json.id}/export`,
-        authToken: auditorToken
+        authToken: coordinadorToken
       });
 
       expect(exported.status).toBe(200);
@@ -559,6 +559,169 @@ describe('backend/server API', () => {
       expect(exported.json.export.format).toBe('json');
     } finally {
       await app.close();
+    }
+  });
+
+  it('aplica RBAC por endpoint protegido según rol', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, {
+      choices: [{ message: { content: '{"puntuacion_sugerida": 88, "justificacion_breve": "Correcto"}' } }]
+    })));
+    const app = await loadServer({ provider: 'openai' });
+    const adminToken = buildSessionToken({ role: 'admin', sub: 'u-admin-1' });
+    const docenteToken = buildSessionToken({ role: 'docente', sub: 'u-docente-1' });
+    const coordinadorToken = buildSessionToken({ role: 'coordinador', sub: 'u-coord-1' });
+    const correctorToken = buildSessionToken({ role: 'corrector', sub: 'u-corrector-1' });
+    const auditorToken = buildSessionToken({ role: 'auditor', sub: 'u-auditor-1' });
+
+    try {
+      const payload = {
+        examen: { materia: 'Contabilidad', grupo: 'A', fecha: '2026-03-20', totalPreguntas: 10, claveRespuestas: 'ABCD' },
+        estudiante: { nombre: 'Ana', matricula: 'A1' },
+        respuestas: { lista: ['A', 'B'], texto: 'AB' },
+        puntuacionPorPregunta: [],
+        justificacionesIA: [],
+        calificacionFinal: { notaSobre100: 80, letra: 'B', justificacionDocente: 'Bien' }
+      };
+
+      const createdByDocente = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        authToken: docenteToken,
+        body: payload
+      });
+      expect(createdByDocente.status).toBe(201);
+
+      const suggestByCoordinador = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/calificacion/sugerir',
+        method: 'POST',
+        authToken: coordinadorToken,
+        body: basePayload
+      });
+      expect(suggestByCoordinador.status).toBe(200);
+
+      const suggestByCorrector = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/calificacion/sugerir',
+        method: 'POST',
+        authToken: correctorToken,
+        body: basePayload
+      });
+      expect(suggestByCorrector.status).toBe(200);
+
+      const createByAuditor = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        authToken: auditorToken,
+        body: payload
+      });
+      expect(createByAuditor.status).toBe(403);
+      expect(createByAuditor.json.error.code).toBe('auth_forbidden');
+
+      const createByCoordinador = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        authToken: coordinadorToken,
+        body: payload
+      });
+      expect(createByCoordinador.status).toBe(403);
+      expect(createByCoordinador.json.error.code).toBe('auth_forbidden');
+
+      const exportByDocente = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/reportes/${createdByDocente.json.id}/export`,
+        authToken: docenteToken
+      });
+      expect(exportByDocente.status).toBe(403);
+      expect(exportByDocente.json.error.code).toBe('auth_forbidden');
+
+      const exportByCoordinador = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/reportes/${createdByDocente.json.id}/export`,
+        authToken: coordinadorToken
+      });
+      expect(exportByCoordinador.status).toBe(200);
+
+      const exportByAuditor = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/reportes/${createdByDocente.json.id}/export`,
+        authToken: auditorToken
+      });
+      expect(exportByAuditor.status).toBe(403);
+      expect(exportByAuditor.json.error.code).toBe('auth_forbidden');
+
+      const createByAdmin = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        authToken: adminToken,
+        body: payload
+      });
+      expect(createByAdmin.status).toBe(201);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('audita denegaciones 401/403 por rol y recurso', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, {
+      choices: [{ message: { content: '{"puntuacion_sugerida": 88, "justificacion_breve": "Correcto"}' } }]
+    })));
+    const logSpy = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+    const app = await loadServer({ provider: 'openai' });
+    const ownerToken = buildSessionToken({ role: 'docente', sub: 'u-owner', tenantId: 'tenant-owner', institution: 'inst-owner' });
+    const foreignToken = buildSessionToken({ role: 'auditor', sub: 'u-foreign', tenantId: 'tenant-foreign', institution: 'inst-foreign' });
+
+    try {
+      const unauthenticated = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        headers: { authorization: '' }
+      });
+      expect(unauthenticated.status).toBe(401);
+
+      const created = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        authToken: ownerToken,
+        body: {
+          examen: { materia: 'Contabilidad', grupo: 'A', fecha: '2026-03-20', totalPreguntas: 10, claveRespuestas: 'ABCD' },
+          estudiante: { nombre: 'Ana', matricula: 'A1' },
+          respuestas: { lista: ['A', 'B'], texto: 'AB' },
+          puntuacionPorPregunta: [],
+          justificacionesIA: [],
+          calificacionFinal: { notaSobre100: 80, letra: 'B', justificacionDocente: 'Bien' }
+        }
+      });
+      expect(created.status).toBe(201);
+
+      const forbiddenByRole = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/calificacion/sugerir',
+        method: 'POST',
+        authToken: foreignToken,
+        body: basePayload
+      });
+      expect(forbiddenByRole.status).toBe(403);
+
+      const forbiddenByResource = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/reportes/${created.json.id}/export`,
+        authToken: foreignToken
+      });
+      expect(forbiddenByResource.status).toBe(403);
+
+      const rawLogs = logSpy.mock.calls.map(([line]) => String(line));
+      expect(rawLogs.some((line) => line.includes('"event":"authentication_failed"'))).toBe(true);
+      expect(rawLogs.some((line) => line.includes('"event":"authorization_denied"') && line.includes('"resource":"/api/calificacion/sugerir"'))).toBe(true);
+      expect(rawLogs.some((line) => line.includes('"event":"authorization_denied"') && line.includes('"resource":"/api/reportes/:id/export"'))).toBe(true);
+    } finally {
+      await app.close();
+      logSpy.mockRestore();
     }
   });
 
