@@ -40,14 +40,56 @@ const toAuditLog = ({ reportId, action, actor, metadata = {} }) => ({
 
 const fromRecord = (record) => parseJson(record?.payload_json, null);
 
-export const createReport = async (reportPayload, { actor = 'sistema_backend' } = {}) => {
+const toOwnership = (ownership = {}) => {
+  const tenantId = String(ownership.tenantId || '').trim();
+  const userId = String(ownership.userId || '').trim();
+  const role = String(ownership.role || '').trim();
+
+  if (!tenantId && !userId && !role) {
+    return undefined;
+  }
+
+  return {
+    tenantId: tenantId || undefined,
+    userId: userId || undefined,
+    role: role || undefined
+  };
+};
+
+const matchesAccessScope = (reportPayload, { tenantId, userId, enforceUserScope } = {}) => {
+  if (!tenantId) {
+    return true;
+  }
+
+  const reportTenantId = String(reportPayload?.ownership?.tenantId || '').trim();
+  if (!reportTenantId || reportTenantId !== tenantId) {
+    return false;
+  }
+
+  if (!enforceUserScope) {
+    return true;
+  }
+
+  const reportUserId = String(reportPayload?.ownership?.userId || '').trim();
+  return Boolean(userId && reportUserId && reportUserId === userId);
+};
+
+export const createReport = async (reportPayload, {
+  actor = 'sistema_backend',
+  ownership,
+  auditMetadata = {}
+} = {}) => {
   const storage = await getReportsStorageAdapter();
   const timestamp = nowIso();
   const reportId = String(reportPayload.id || createId('report'));
+  const ownershipMetadata = toOwnership(ownership);
+  const payloadWithOwnership = ownershipMetadata
+    ? { ...reportPayload, ownership: ownershipMetadata }
+    : reportPayload;
 
-  const record = toRecord(reportPayload, {
+  const record = toRecord(payloadWithOwnership, {
     reportId,
-    createdAt: reportPayload.creadoEn || timestamp,
+    createdAt: payloadWithOwnership.creadoEn || timestamp,
     updatedAt: timestamp
   });
 
@@ -57,14 +99,18 @@ export const createReport = async (reportPayload, { actor = 'sistema_backend' } 
       reportId,
       action: 'report_created',
       actor,
-      metadata: { source: 'api', id: reportId }
+      metadata: { source: 'api', id: reportId, ...auditMetadata }
     })
   );
 
   return fromRecord(record);
 };
 
-export const updateReport = async (reportId, reportPayload, { actor = 'sistema_backend' } = {}) => {
+export const updateReport = async (reportId, reportPayload, {
+  actor = 'sistema_backend',
+  ownership,
+  auditMetadata = {}
+} = {}) => {
   const storage = await getReportsStorageAdapter();
   const current = await storage.getReportRecordById(reportId);
   if (!current) {
@@ -72,7 +118,11 @@ export const updateReport = async (reportId, reportPayload, { actor = 'sistema_b
   }
 
   const currentPayload = fromRecord(current) || {};
-  const updated = toRecord(reportPayload, {
+  const ownershipMetadata = toOwnership(ownership);
+  const payloadWithOwnership = ownershipMetadata
+    ? { ...reportPayload, ownership: ownershipMetadata }
+    : reportPayload;
+  const updated = toRecord(payloadWithOwnership, {
     reportId,
     createdAt: currentPayload.creadoEn || current.created_at,
     updatedAt: nowIso()
@@ -85,23 +135,32 @@ export const updateReport = async (reportId, reportPayload, { actor = 'sistema_b
       reportId,
       action: 'report_updated',
       actor,
-      metadata: { source: 'api', id: reportId }
+      metadata: { source: 'api', id: reportId, ...auditMetadata }
     })
   );
 
   return saved ? fromRecord(saved) : null;
 };
 
-export const getReportById = async (reportId) => {
+export const getReportById = async (reportId, accessScope = {}) => {
+  const storage = await getReportsStorageAdapter();
+  const found = await storage.getReportRecordById(reportId);
+  const report = fromRecord(found);
+  return matchesAccessScope(report, accessScope) ? report : null;
+};
+
+export const getReportByIdUnscoped = async (reportId) => {
   const storage = await getReportsStorageAdapter();
   const found = await storage.getReportRecordById(reportId);
   return fromRecord(found);
 };
 
-export const listReports = async () => {
+export const listReports = async (accessScope = {}) => {
   const storage = await getReportsStorageAdapter();
   const rows = await storage.listReportRecords();
-  return rows.map((row) => fromRecord(row)).filter(Boolean);
+  return rows
+    .map((row) => fromRecord(row))
+    .filter((row) => Boolean(row) && matchesAccessScope(row, accessScope));
 };
 
 export const listAuditLogs = async () => {

@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import {
   createReport,
   getReportById,
+  getReportByIdUnscoped,
   listReports,
   updateReport
 } from './repositories/reportRepository.js';
@@ -352,6 +353,24 @@ const runProtectedAction = async ({ req, res, requestId, action, resource, onAll
   }
 };
 
+const mustRestrictByUserId = (role) => ['docente', 'corrector'].includes(String(role || '').trim());
+
+const getReportAccessScope = (user = {}) => ({
+  tenantId: String(user.tenantId || user.institution || '').trim(),
+  userId: String(user.userId || '').trim(),
+  enforceUserScope: mustRestrictByUserId(user.role)
+});
+
+const sendForbiddenReportAccess = ({ res, requestId }) => {
+  sendJson(res, 403, {
+    error: {
+      message: 'Acceso denegado: el reporte pertenece a otro tenant o usuario.',
+      code: 'auth_forbidden',
+      requestId
+    }
+  }, { requestId });
+};
+
 const handler = async (req, res) => {
   const requestId = getOrCreateRequestId(req);
   const startedAt = Date.now();
@@ -504,7 +523,7 @@ const handler = async (req, res) => {
     }
 
     try {
-      const reportes = await listReports();
+      const reportes = await listReports(getReportAccessScope(req.user));
       sendJson(res, 200, { data: reportes }, { requestId });
     } catch (error) {
       sendJson(res, 500, {
@@ -532,8 +551,14 @@ const handler = async (req, res) => {
     }
 
     const reportId = decodeURIComponent(req.url.replace('/api/reportes/', '').replace('/export', '').trim());
-    const reporte = await getReportById(reportId);
+    const accessScope = getReportAccessScope(req.user);
+    const reporte = await getReportById(reportId, accessScope);
     if (!reporte) {
+      const existing = await getReportByIdUnscoped(reportId);
+      if (existing) {
+        sendForbiddenReportAccess({ res, requestId });
+        return;
+      }
       sendJson(res, 404, {
         error: {
           message: 'Reporte no encontrado.',
@@ -565,9 +590,15 @@ const handler = async (req, res) => {
     }
 
     const reportId = decodeURIComponent(req.url.replace('/api/reportes/', '').trim());
-    const reporte = await getReportById(reportId);
+    const accessScope = getReportAccessScope(req.user);
+    const reporte = await getReportById(reportId, accessScope);
 
     if (!reporte) {
+      const existing = await getReportByIdUnscoped(reportId);
+      if (existing) {
+        sendForbiddenReportAccess({ res, requestId });
+        return;
+      }
       sendJson(res, 404, {
         error: {
           message: 'Reporte no encontrado.',
@@ -599,10 +630,29 @@ const handler = async (req, res) => {
       const payload = validarPayloadReporte(await parseBody(req));
       const actor = String(req.headers['x-actor'] || 'frontend_tecnico').trim() || 'frontend_tecnico';
       const payloadId = typeof payload.id === 'string' ? payload.id : '';
-      const existe = payloadId ? await getReportById(payloadId) : null;
+      const accessScope = getReportAccessScope(req.user);
+      const existe = payloadId ? await getReportById(payloadId, accessScope) : null;
+
+      if (payloadId && !existe) {
+        const existing = await getReportByIdUnscoped(payloadId);
+        if (existing) {
+          sendForbiddenReportAccess({ res, requestId });
+          return;
+        }
+      }
+
+      const ownership = {
+        tenantId: req.user?.tenantId,
+        userId: req.user?.userId,
+        role: req.user?.role
+      };
+      const auditMetadata = {
+        tenantId: req.user?.tenantId || req.user?.institution,
+        sessionId: req.user?.sessionId
+      };
       const reporte = existe
-        ? await updateReport(payloadId, payload, { actor })
-        : await createReport(payload, { actor });
+        ? await updateReport(payloadId, payload, { actor, ownership, auditMetadata })
+        : await createReport(payload, { actor, ownership, auditMetadata });
 
       sendJson(res, existe ? 200 : 201, reporte, { requestId });
     } catch (error) {

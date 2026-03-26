@@ -52,6 +52,15 @@ Si falta o es inválido, backend responde `401` con `error.code = "auth_unauthor
 3. Si backend responde `401`, la UI muestra mensaje explícito de sesión expirada/inválida.
 4. Si backend responde `403`, la UI muestra mensaje explícito de permiso insuficiente según RBAC.
 
+### Aislamiento multi-tenant en reportes
+
+- Cada `reporte` persistido incluye `ownership` con `tenantId`, `userId` y `role`, derivados de `req.user`.
+- `GET /api/reportes` aplica aislamiento por `tenantId` y, para roles con alcance personal (`docente`, `corrector`), también por `userId`.
+- `GET /api/reportes/:id` y `GET /api/reportes/:id/export` validan ownership:
+  - si el recurso existe pero pertenece a otro tenant/usuario, backend responde `403` (`auth_forbidden`);
+  - si no existe, responde `404`.
+- La auditoría en `audit_logs.metadata_json` registra `tenantId` y `sessionId` en `report_created` / `report_updated` para trazabilidad entre sesión y recurso.
+
 ## RBAC por acción
 
 Acciones críticas y mapeo de endpoints:

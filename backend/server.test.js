@@ -290,6 +290,11 @@ describe('backend/server API', () => {
       });
       expect(created.status).toBe(201);
       expect(created.json.id).toBeTruthy();
+      expect(created.json.ownership).toMatchObject({
+        tenantId: 'Instituto Central',
+        userId: 'u-docente-1',
+        role: 'docente'
+      });
 
       const listed = await apiRequest({ baseUrl: app.baseUrl, path: '/api/reportes' });
       expect(listed.status).toBe(200);
@@ -311,7 +316,7 @@ describe('backend/server API', () => {
 
       const rawLogs = execFileSync(
         'sqlite3',
-        ['-json', process.env.REPORTS_DB_FILE, 'SELECT action, actor FROM audit_logs ORDER BY created_at ASC;'],
+        ['-json', process.env.REPORTS_DB_FILE, 'SELECT action, actor, metadata_json FROM audit_logs ORDER BY created_at ASC;'],
         { encoding: 'utf-8' }
       );
       const auditLogs = JSON.parse(rawLogs);
@@ -319,6 +324,133 @@ describe('backend/server API', () => {
       expect(auditLogs).toHaveLength(2);
       expect(auditLogs.map((log) => log.action)).toEqual(['report_created', 'report_updated']);
       expect(auditLogs[0].actor).toBe('qa_tester');
+      expect(JSON.parse(auditLogs[0].metadata_json)).toMatchObject({
+        tenantId: 'Instituto Central',
+        sessionId: 'session-123'
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('permite acceder reportes dentro del mismo tenant', async () => {
+    const app = await loadServer({ provider: 'openai' });
+    const ownerToken = buildSessionToken({ sub: 'u-docente-owner', role: 'docente', tenantId: 'tenant-1', institution: 'inst-1' });
+    const tenantAuditorToken = buildSessionToken({ sub: 'u-auditor-1', role: 'auditor', tenantId: 'tenant-1', institution: 'inst-1' });
+
+    try {
+      const created = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        authToken: ownerToken,
+        body: {
+          examen: { materia: 'Contabilidad', grupo: 'A', fecha: '2026-03-20', totalPreguntas: 10, claveRespuestas: 'ABCD' },
+          estudiante: { nombre: 'Ana', matricula: 'A1' },
+          respuestas: { lista: ['A', 'B'], texto: 'AB' },
+          puntuacionPorPregunta: [],
+          justificacionesIA: [],
+          calificacionFinal: { notaSobre100: 80, letra: 'B', justificacionDocente: 'Bien' }
+        }
+      });
+      expect(created.status).toBe(201);
+
+      const byId = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/reportes/${created.json.id}`,
+        authToken: tenantAuditorToken
+      });
+      expect(byId.status).toBe(200);
+
+      const exported = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/reportes/${created.json.id}/export`,
+        authToken: tenantAuditorToken
+      });
+      expect(exported.status).toBe(200);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('deniega acceso cross-tenant por id y export con 403', async () => {
+    const app = await loadServer({ provider: 'openai' });
+    const ownerToken = buildSessionToken({ sub: 'u-docente-owner', role: 'docente', tenantId: 'tenant-owner', institution: 'inst-owner' });
+    const foreignTenantToken = buildSessionToken({ sub: 'u-auditor-foreign', role: 'auditor', tenantId: 'tenant-foreign', institution: 'inst-foreign' });
+
+    try {
+      const created = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        authToken: ownerToken,
+        body: {
+          examen: { materia: 'Contabilidad', grupo: 'A', fecha: '2026-03-20', totalPreguntas: 10, claveRespuestas: 'ABCD' },
+          estudiante: { nombre: 'Ana', matricula: 'A1' },
+          respuestas: { lista: ['A', 'B'], texto: 'AB' },
+          puntuacionPorPregunta: [],
+          justificacionesIA: [],
+          calificacionFinal: { notaSobre100: 80, letra: 'B', justificacionDocente: 'Bien' }
+        }
+      });
+      expect(created.status).toBe(201);
+
+      const byId = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/reportes/${created.json.id}`,
+        authToken: foreignTenantToken
+      });
+      expect(byId.status).toBe(403);
+      expect(byId.json.error.code).toBe('auth_forbidden');
+
+      const exported = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/reportes/${created.json.id}/export`,
+        authToken: foreignTenantToken
+      });
+      expect(exported.status).toBe(403);
+      expect(exported.json.error.code).toBe('auth_forbidden');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('aísla listados por tenant y por usuario cuando aplica política', async () => {
+    const app = await loadServer({ provider: 'openai' });
+    const docenteA = buildSessionToken({ sub: 'u-docente-a', role: 'docente', tenantId: 'tenant-1', institution: 'inst-1' });
+    const docenteB = buildSessionToken({ sub: 'u-docente-b', role: 'docente', tenantId: 'tenant-1', institution: 'inst-1' });
+    const docenteOtherTenant = buildSessionToken({ sub: 'u-docente-c', role: 'docente', tenantId: 'tenant-2', institution: 'inst-2' });
+    const auditorTenant1 = buildSessionToken({ sub: 'u-auditor-1', role: 'auditor', tenantId: 'tenant-1', institution: 'inst-1' });
+
+    try {
+      const createReportFor = (authToken, nombre) => apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        authToken,
+        body: {
+          examen: { materia: 'Contabilidad', grupo: 'A', fecha: '2026-03-20', totalPreguntas: 10, claveRespuestas: 'ABCD' },
+          estudiante: { nombre, matricula: `${nombre}-M` },
+          respuestas: { lista: ['A', 'B'], texto: 'AB' },
+          puntuacionPorPregunta: [],
+          justificacionesIA: [],
+          calificacionFinal: { notaSobre100: 80, letra: 'B', justificacionDocente: 'Bien' }
+        }
+      });
+
+      expect((await createReportFor(docenteA, 'Ana')).status).toBe(201);
+      expect((await createReportFor(docenteB, 'Beto')).status).toBe(201);
+      expect((await createReportFor(docenteOtherTenant, 'Carla')).status).toBe(201);
+
+      const listedDocenteA = await apiRequest({ baseUrl: app.baseUrl, path: '/api/reportes', authToken: docenteA });
+      expect(listedDocenteA.status).toBe(200);
+      expect(listedDocenteA.json.data).toHaveLength(1);
+      expect(listedDocenteA.json.data[0].estudiante.nombre).toBe('Ana');
+
+      const listedAuditorTenant1 = await apiRequest({ baseUrl: app.baseUrl, path: '/api/reportes', authToken: auditorTenant1 });
+      expect(listedAuditorTenant1.status).toBe(200);
+      expect(listedAuditorTenant1.json.data).toHaveLength(2);
+      expect(listedAuditorTenant1.json.data.map((report) => report.estudiante.nombre).sort()).toEqual(['Ana', 'Beto']);
     } finally {
       await app.close();
     }
