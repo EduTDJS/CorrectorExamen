@@ -1,7 +1,7 @@
 export const STORAGE_DECISION_FINAL = 'corrector_decision_final';
 export const STORAGE_REPORTES = 'corrector_historial_reportes_v1';
 
-const SCHEMA_VERSION_REPORTES = 2;
+const SCHEMA_VERSION_REPORTES = 3;
 const SCHEMA_VERSION_DECISION_FINAL = 2;
 
 const decisionFinalInicial = {
@@ -10,6 +10,11 @@ const decisionFinalInicial = {
 };
 
 const esObjeto = (valor) => typeof valor === 'object' && valor !== null && !Array.isArray(valor);
+const normalizarTextoBase = (valor) => String(valor || '').trim().replace(/\s+/g, ' ');
+const removerDiacriticos = (valor) => valor.normalize('NFD').replace(/\p{Diacritic}/gu, '');
+
+export const normalizarNombreMateria = (materia) => removerDiacriticos(normalizarTextoBase(materia)).toLowerCase();
+export const crearMateriaFolderId = (materiaNormalizada) => `materia:${materiaNormalizada || 'sin-definir'}`;
 
 const esDecisionFinalValida = (valor) => esObjeto(valor)
   && (typeof valor.puntuacion === 'string' || typeof valor.puntuacion === 'number')
@@ -90,7 +95,10 @@ const esReporteValido = (reporte) => esObjeto(reporte)
   && esObjeto(reporte.calificacionFinal)
   && typeof reporte.calificacionFinal.notaSobre100 === 'number'
   && typeof reporte.calificacionFinal.letra === 'string'
-  && typeof reporte.calificacionFinal.justificacionDocente === 'string';
+  && typeof reporte.calificacionFinal.justificacionDocente === 'string'
+  && esObjeto(reporte.organizacion)
+  && typeof reporte.organizacion.materiaNormalizada === 'string'
+  && typeof reporte.organizacion.materiaFolderId === 'string';
 
 const repararReporte = (reporte) => {
   if (!esObjeto(reporte)) return null;
@@ -124,6 +132,8 @@ const repararReporte = (reporte) => {
         && typeof pregunta.numero === 'number'
         && typeof pregunta.justificacionIA === 'string')
       .map((pregunta) => ({ pregunta: pregunta.numero, justificacion: pregunta.justificacionIA }));
+  const materiaNormalizada = normalizarNombreMateria(base.examen.materia);
+  const materiaFolderId = crearMateriaFolderId(materiaNormalizada);
 
   const reporteReparado = {
     ...base,
@@ -132,7 +142,7 @@ const repararReporte = (reporte) => {
       texto: typeof base.respuestas.texto === 'string' ? base.respuestas.texto : ''
     },
     examen: {
-      materia: typeof base.examen.materia === 'string' ? base.examen.materia : '',
+      materia: normalizarTextoBase(base.examen.materia),
       grupo: typeof base.examen.grupo === 'string' ? base.examen.grupo : '',
       fecha: typeof base.examen.fecha === 'string' ? base.examen.fecha : '',
       totalPreguntas: typeof base.examen.totalPreguntas === 'number' ? base.examen.totalPreguntas : 0,
@@ -148,6 +158,10 @@ const repararReporte = (reporte) => {
       justificacionDocente: typeof base.calificacionFinal.justificacionDocente === 'string'
         ? base.calificacionFinal.justificacionDocente
         : ''
+    },
+    organizacion: {
+      materiaNormalizada,
+      materiaFolderId
     },
     justificacionesIA
   };
@@ -179,6 +193,11 @@ const migrarReportes = (versionInicial, dataInicial) => {
     if (version === 1) {
       data = data.map((reporte) => repararReporte(reporte)).filter(Boolean);
       version = 2;
+      continue;
+    }
+    if (version === 2) {
+      data = data.map((reporte) => repararReporte(reporte)).filter(Boolean);
+      version = 3;
       continue;
     }
 

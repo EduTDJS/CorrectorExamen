@@ -15,6 +15,21 @@ Este documento describe los esquemas lógicos usados para construir y persistir 
 ```
 
 - `claveRespuestas` se normaliza a letras válidas `A|B|C|D`.
+- `materia` se guarda con normalización visual mínima (`trim` + colapso de espacios internos).
+
+## Entidad `organizacion`
+
+Estructura derivada para agrupar historial por carpeta semántica de materia.
+
+```json
+{
+  "materiaNormalizada": "contabilidad i",
+  "materiaFolderId": "materia:contabilidad i"
+}
+```
+
+- `materiaNormalizada`: nombre de materia canónico (`trim`, colapso de espacios, minúsculas y sin diacríticos) para evitar duplicados semánticos.
+- `materiaFolderId`: identificador estable de carpeta para agrupación y acciones masivas (conteo/exportación).
 
 ## Entidad `estudiante`
 
@@ -102,12 +117,13 @@ El historial se persiste bajo `corrector_historial_reportes_v1` con envoltura ve
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "data": [
     {
       "id": "uuid",
       "creadoEn": "ISO-8601",
       "examen": { "...": "ver esquema examen" },
+      "organizacion": { "...": "ver esquema organizacion" },
       "estudiante": { "...": "ver esquema estudiante" },
       "respuestas": { "...": "ver esquema respuestas" },
       "puntuacionPorPregunta": [
@@ -128,6 +144,7 @@ El historial se persiste bajo `corrector_historial_reportes_v1` con envoltura ve
 Compatibilidad y resiliencia:
 
 - `schemaVersion: 1`: arreglo legacy sin envoltura (se migra automáticamente a v2).
+- `schemaVersion: 2`: envoltura versionada sin `organizacion` (se migra automáticamente a v3 reconstruyendo carpetas por materia normalizada).
 - Los registros corruptos o incompletos se aíslan durante la lectura: se reparan cuando es posible o se descartan.
 
 ## Relación entre entidades

@@ -11,8 +11,10 @@ function StepReporteFinal({
   filtrosHistorial,
   setFiltrosHistorial,
   reportesFiltrados,
+  reportesAgrupadosPorMateria,
   estadisticasGrupo,
-  exportarGrupoCSV
+  exportarGrupoCSV,
+  exportarCarpetaMateriaCSV
 }) {
   return (
     <div className="paso">
@@ -59,14 +61,28 @@ function StepReporteFinal({
         </label>
       </div>
 
-      <table className="tabla-respuestas">
-        <thead><tr><th>Estudiante</th><th>Matrícula</th><th>Materia</th><th>Grupo</th><th>Fecha</th><th>Nota</th><th>Letra</th></tr></thead>
-        <tbody>
-          {reportesFiltrados.map((rep) => (
-            <tr key={rep.id}><td>{rep.estudiante.nombre}</td><td>{rep.estudiante.matricula}</td><td>{rep.examen.materia}</td><td>{rep.examen.grupo}</td><td>{rep.examen.fecha}</td><td>{rep.calificacionFinal.notaSobre100.toFixed(2)}</td><td>{rep.calificacionFinal.letra}</td></tr>
-          ))}
-        </tbody>
-      </table>
+      {reportesAgrupadosPorMateria.map((carpeta) => (
+        <details key={carpeta.materiaFolderId} open>
+          <summary>
+            {carpeta.materia} ({carpeta.totalReportes} registro{carpeta.totalReportes === 1 ? '' : 's'})
+          </summary>
+          <div className="acciones-ajustes">
+            <button type="button" onClick={() => exportarCarpetaMateriaCSV(carpeta.materiaFolderId)}>
+              Exportar carpeta CSV
+            </button>
+            <span>Registros en carpeta: <strong>{carpeta.totalReportes}</strong></span>
+          </div>
+          <table className="tabla-respuestas">
+            <thead><tr><th>Estudiante</th><th>Matrícula</th><th>Materia</th><th>Grupo</th><th>Fecha</th><th>Nota</th><th>Letra</th></tr></thead>
+            <tbody>
+              {carpeta.reportes.map((rep) => (
+                <tr key={rep.id}><td>{rep.estudiante.nombre}</td><td>{rep.estudiante.matricula}</td><td>{rep.examen.materia}</td><td>{rep.examen.grupo}</td><td>{rep.examen.fecha}</td><td>{rep.calificacionFinal.notaSobre100.toFixed(2)}</td><td>{rep.calificacionFinal.letra}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      ))}
+      {reportesFiltrados.length === 0 && <p className="detalle">No hay registros para los filtros aplicados.</p>}
 
       <div className="resumen">
         <p>Distribución de letras: A ({estadisticasGrupo.A}), B+ ({estadisticasGrupo['B+']}), B ({estadisticasGrupo.B}), C+ ({estadisticasGrupo['C+']}), C ({estadisticasGrupo.C}), D ({estadisticasGrupo.D}), F ({estadisticasGrupo.F})</p>

@@ -1,14 +1,15 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 
 import App from './App';
-import { exportarIndividualCSV, exportarIndividualPDF } from './services/exportService';
+import { exportarGrupoCSV, exportarIndividualCSV, exportarIndividualPDF } from './services/exportService';
 
 vi.mock('./services/exportService', async () => {
   const actual = await vi.importActual('./services/exportService');
   return {
     ...actual,
     exportarIndividualCSV: vi.fn(),
-    exportarIndividualPDF: vi.fn()
+    exportarIndividualPDF: vi.fn(),
+    exportarGrupoCSV: vi.fn()
   };
 });
 
@@ -51,5 +52,9 @@ describe('App - flujo guardar y exportar', () => {
 
     const filas = within(screen.getByRole('table')).getAllByRole('row');
     expect(filas).toHaveLength(2);
+    expect(screen.getByText(/Registros en carpeta:/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Exportar carpeta CSV' }));
+    expect(exportarGrupoCSV).toHaveBeenCalledTimes(1);
   });
 });
