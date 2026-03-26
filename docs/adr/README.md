@@ -30,6 +30,7 @@ Cada ADR debe incluir estas secciones mínimas:
 - [0005 - Migración IA a backend y custodia de secretos](0005-migracion-ia-a-backend.md)
 - [0006 - Selección de proveedor IA por variable de entorno y contrato normalizado](0006-ai-provider-env-y-contrato-normalizado.md)
 - [0007 - Persistencia de reportes en backend con auditoría](0007-persistencia-reportes-en-backend-con-auditoria.md)
+- [0008 - Modelo de identidad mínimo y RBAC en backend](0008-modelo-rbac-y-sesion-token.md)
 
 ## Nota de nomenclatura
 

@@ -6,12 +6,71 @@ La aplicación usa un modelo **server-side** donde los secretos de proveedores (
 
 - El frontend no solicita ni almacena API keys del proveedor.
 - La UI invoca `POST /api/calificacion/sugerir` en el backend propio.
+- Los endpoints críticos del backend exigen `Authorization: Bearer <session-token>` de usuario final.
 - El backend selecciona proveedor por `AI_PROVIDER` y firma la llamada saliente con:
   - `ANTHROPIC_API_KEY` (Anthropic)
   - `OPENAI_API_KEY` (OpenAI)
 - El endpoint `POST /api/calificacion/sugerir` exige token interno en header (`X-Internal-Token` por defecto).
 - El backend aplica rate limiting configurable por ventana y límite máximo.
 - El backend expone `GET /api/calificacion/proveedor` sin secretos, solo metadatos operativos (proveedor/modelo/timeout).
+- El backend aplica RBAC por acción para crear examen, corregir, exportar y ver histórico.
+
+## Modelo de identidad mínimo y contrato de sesión/token
+
+La identidad mínima de usuario en backend queda definida por:
+
+- `userId` (`sub` en token)
+- `role`
+- `institution`
+
+Además, para trazabilidad y control de expiración de sesión:
+
+- `sessionId`
+- `exp` (epoch seconds)
+
+### Contrato de token de sesión (`v1`)
+
+- Transporte: `Authorization: Bearer <token>`.
+- Formato: `v1.<payload_base64url>.<signature_base64url>`.
+- Firma: `HMAC-SHA256("v1.<payload_base64url>", SESSION_TOKEN_SECRET)`.
+- Payload requerido:
+  - `sub`, `role`, `institution`, `sessionId`, `exp`.
+- Validaciones mínimas:
+  - firma válida,
+  - campos obligatorios presentes,
+  - token no expirado.
+
+Si falta o es inválido, backend responde `401` con `error.code = "auth_unauthorized"`.
+
+## RBAC por acción
+
+Acciones críticas y mapeo de endpoints:
+
+- `create_exam` → `POST /api/reportes`
+- `correct_exam` → `POST /api/calificacion/sugerir`
+- `export_report` → `GET /api/reportes/:id/export`
+- `view_history` → `GET /api/reportes`, `GET /api/reportes/:id`
+
+Matriz de permisos inicial:
+
+- `admin`: todas las acciones.
+- `docente`: todas las acciones.
+- `corrector`: `correct_exam`, `view_history`.
+- `auditor`: `export_report`, `view_history`.
+
+Si el usuario está autenticado pero sin permiso, backend responde `403` con `error.code = "auth_forbidden"`.
+
+## Logging de denegaciones de autorización
+
+Los eventos de denegación se registran en JSON como:
+
+- `authentication_failed` (fallo de autenticación, 401)
+- `authorization_denied` (falta de permiso, 403)
+
+Ambos incluyen:
+
+- `actor`: `{ userId, role }` cuando la identidad está disponible.
+- `resource`: identificador del recurso o endpoint protegido.
 
 ## Riesgos mitigados
 
