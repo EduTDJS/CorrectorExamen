@@ -67,29 +67,56 @@ Arreglo de objetos, uno por pregunta.
 - `notaSobre100`: número final (automático o ajustado por docente).
 - `letra`: mapeo a escala PUCMM.
 
-## Entidad de historial (`reporte` persistido)
+## Entidad `decisionFinal` persistida
 
-El historial almacena un arreglo de reportes bajo `corrector_historial_reportes_v1`.
+La decisión final se guarda en `corrector_decision_final` con versión de esquema:
 
 ```json
 {
-  "id": "uuid",
-  "creadoEn": "ISO-8601",
-  "examen": { "...": "ver esquema examen" },
-  "estudiante": { "...": "ver esquema estudiante" },
-  "respuestas": { "...": "ver esquema respuestas" },
-  "puntuacionPorPregunta": [
-    { "...": "ver esquema puntuacionPorPregunta" }
-  ],
-  "justificacionesIA": [
-    {
-      "pregunta": 1,
-      "justificacion": "string"
-    }
-  ],
-  "calificacionFinal": { "...": "ver esquema calificacionFinal" }
+  "schemaVersion": 2,
+  "data": {
+    "puntuacion": "string",
+    "justificacion": "string"
+  }
 }
 ```
+
+- `schemaVersion: 1` corresponde al formato legacy sin envoltura (`{ puntuacion, justificacion }`).
+- La lectura valida tipos y restaura valores por defecto cuando no se puede migrar.
+
+## Entidad de historial (`reporte` persistido)
+
+El historial se persiste bajo `corrector_historial_reportes_v1` con envoltura versionada.
+
+```json
+{
+  "schemaVersion": 2,
+  "data": [
+    {
+      "id": "uuid",
+      "creadoEn": "ISO-8601",
+      "examen": { "...": "ver esquema examen" },
+      "estudiante": { "...": "ver esquema estudiante" },
+      "respuestas": { "...": "ver esquema respuestas" },
+      "puntuacionPorPregunta": [
+        { "...": "ver esquema puntuacionPorPregunta" }
+      ],
+      "justificacionesIA": [
+        {
+          "pregunta": 1,
+          "justificacion": "string"
+        }
+      ],
+      "calificacionFinal": { "...": "ver esquema calificacionFinal" }
+    }
+  ]
+}
+```
+
+Compatibilidad y resiliencia:
+
+- `schemaVersion: 1`: arreglo legacy sin envoltura (se migra automáticamente a v2).
+- Los registros corruptos o incompletos se aíslan durante la lectura: se reparan cuando es posible o se descartan.
 
 ## Relación entre entidades
 
