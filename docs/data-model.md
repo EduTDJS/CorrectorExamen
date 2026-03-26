@@ -2,6 +2,8 @@
 
 Este documento describe los esquemas lógicos usados para construir y persistir reportes de corrección.
 
+> Nota de persistencia: en frontend, `localStorage` es fallback controlado y **no** persistencia primaria. La fuente de verdad en operación normal es backend.
+
 ## Entidad `examen`
 
 ```json
@@ -169,6 +171,13 @@ Compatibilidad y resiliencia (fallback local en desarrollo):
 - `schemaVersion: 3`: reportes previos sin `desglose` explícito por pregunta (se migra automáticamente a v4 normalizando el contrato).
 - Los registros corruptos o incompletos se aíslan durante la lectura: se reparan cuando es posible o se descartan.
 - En producción no se usa fallback JSON; el backend opera únicamente sobre SQLite + migraciones SQL.
+
+### Fallback local de frontend (`localStorage`)
+
+- Clave: `corrector_historial_reportes_v1`.
+- Formato: mismo sobre versionado `{ schemaVersion, data }` para mantener compatibilidad de lectura/migración.
+- Uso permitido: solo cuando el flujo `useReportes` determina indisponibilidad de backend.
+- Uso prohibido en modo backend activo: no se debe escribir en `localStorage` mientras la API responda correctamente.
 
 ## Tabla lógica `reports` (backend)
 
