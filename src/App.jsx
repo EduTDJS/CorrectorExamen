@@ -10,9 +10,11 @@ import { useReportes } from './hooks/useReportes';
 import { obtenerProveedorIA, sugerirCalificacionIA } from './services/aiService';
 import { exportarGrupoCSV, exportarIndividualCSV, exportarIndividualPDF } from './services/exportService';
 import { procesarImagenOCR } from './services/ocrService';
+import { parsearArchivoImportacion } from './services/importService';
 import { guardarDecisionFinal, leerDecisionFinal, normalizarNombreMateria } from './services/storageService';
 import { convertirTextoALista, letrasValidas, limpiarRespuestas, mapearLetraPucmm } from './utils/examUtils';
 import { crearDesglosePregunta } from './utils/questionBreakdown';
+import { detectarMatriculasDuplicadas } from './hooks/useReportes';
 
 const pasos = [
   'Configuración del examen',
@@ -52,6 +54,15 @@ function App() {
   });
   const [reporteActualRef, setReporteActualRef] = useState({ id: null, firma: null });
   const [errorSesionUi, setErrorSesionUi] = useState('');
+  const [importacionEstado, setImportacionEstado] = useState({
+    filas: [],
+    errores: [],
+    duplicados: [],
+    duplicadosEnHistorial: [],
+    resumen: null,
+    contrato: null,
+    error: ''
+  });
 
   const { pasoActual, estadoActual, avanzarPaso, retrocederPaso } = useExamWorkflow(pasos);
   const {
@@ -171,6 +182,46 @@ function App() {
   }, [reportesFiltrados]);
 
   const actualizarDato = (campo, valor) => setDatos((previo) => ({ ...previo, [campo]: valor }));
+
+  const aplicarFilaImportada = (fila) => {
+    actualizarDato('estudianteNombre', fila.estudianteNombre);
+    actualizarDato('estudianteMatricula', fila.estudianteMatricula);
+    setRespuestasLista(fila.respuestasLista);
+    setErrores((previo) => ({ ...previo, respuestasEstudiante: '' }));
+  };
+
+  const importarArchivoRespuestas = async (file) => {
+    if (!file) {
+      setImportacionEstado((previo) => ({
+        ...previo,
+        error: '',
+        filas: [],
+        errores: [],
+        resumen: null,
+        duplicados: [],
+        duplicadosEnHistorial: []
+      }));
+      return;
+    }
+
+    try {
+      const resultado = await parsearArchivoImportacion({ file, totalPreguntas: totalPreguntasNumero });
+      const duplicadosEnHistorial = detectarMatriculasDuplicadas(
+        reportes,
+        resultado.filas.map((fila) => fila.estudianteMatricula)
+      );
+      setImportacionEstado({
+        ...resultado,
+        duplicadosEnHistorial,
+        error: ''
+      });
+    } catch (error) {
+      setImportacionEstado((previo) => ({
+        ...previo,
+        error: error?.message || 'No se pudo importar el archivo.'
+      }));
+    }
+  };
 
   const actualizarRespuesta = (indice, valor) => {
     setRespuestasLista((previo) => {
@@ -376,6 +427,9 @@ function App() {
             actualizarRespuesta={actualizarRespuesta}
             letrasValidas={letrasValidas}
             umbralBajaConfianza={UMBRAL_BAJA_CONFIANZA}
+            importacionEstado={importacionEstado}
+            onArchivoImportacion={importarArchivoRespuestas}
+            onAplicarFilaImportada={aplicarFilaImportada}
           />
         )}
 

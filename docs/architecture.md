@@ -27,7 +27,8 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
 ┌───────────────┐              ┌───────────────┐           ┌───────────────┐
 │Servicios ext. │              │Persistencia   │           │Exportación    │
 │ocrService     │              │storageService │           │exportService  │
-│               │              │+sessionService│           │               │
+│importService  │              │+sessionService│           │               │
+│               │              │               │           │               │
 │(Tesseract.js) │              │(API primario +│           │(jsPDF + CSV)  │
 │               │              │fallback local │           │               │
 │               │              │controlado)    │           │               │
@@ -62,6 +63,16 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
   - `textoDetectado: string`
   - `respuestasParseadas: Array<{ respuesta: string, confianza: number | null, fuenteLinea: string }>`
 - Umbral de baja confianza en UI: `< 65` (porcentaje OCR).
+
+## Flujo de importación masiva (CSV/Excel)
+
+1. `StepIngresoRespuestas` permite cargar archivo de importación (`.csv`, `.xls`, `.xlsx` en SpreadsheetML).
+2. `src/services/importService.js` valida límites (`2MB`, `<=200` filas), normaliza encabezados y aplica contrato por fila.
+3. El servicio normaliza respuestas con las mismas reglas de `examUtils` (`A/B/C/D` + equivalencias OCR).
+4. Los errores se devuelven por registro (`fila`, `matricula`, `errores[]`) para mostrarse en UI.
+5. Si una matrícula aparece duplicada dentro del archivo, se conserva la última fila válida.
+6. `App.jsx` cruza matrículas importadas contra `useReportes` para advertir duplicados ya existentes en historial.
+7. El docente puede cargar cualquier fila válida al formulario y editarla manualmente antes de seguir con revisión/guardado.
 
 ## Flujo de sesión y autorización
 

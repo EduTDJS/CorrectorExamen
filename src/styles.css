@@ -196,3 +196,16 @@ button[disabled] {
   border: 1px solid #fcd34d;
   background: #fffbeb;
 }
+
+.importacion-bloque {
+  border: 1px solid #dbeafe;
+  background: #f8fbff;
+  border-radius: 10px;
+  padding: 0.8rem;
+}
+
+.error-lista {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: #b91c1c;
+}
