@@ -3,6 +3,11 @@ import http from 'node:http';
 const PORT = Number(process.env.PORT || 8787);
 const REQUEST_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS || 20000);
 const AI_PROVIDER = (process.env.AI_PROVIDER || 'anthropic').toLowerCase();
+const INTERNAL_AUTH_TOKEN = process.env.INTERNAL_AUTH_TOKEN || '';
+const INTERNAL_AUTH_HEADER = (process.env.INTERNAL_AUTH_HEADER || 'x-internal-token').toLowerCase();
+const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 60000);
+const RATE_LIMIT_MAX_REQUESTS = Number(process.env.RATE_LIMIT_MAX_REQUESTS || 20);
+const RATE_LIMIT_KEY_STRATEGY = (process.env.RATE_LIMIT_KEY_STRATEGY || 'token_or_ip').toLowerCase();
 
 const PROVIDER_ERRORS = {
   CONFIG: 'provider_config_error',
@@ -10,6 +15,13 @@ const PROVIDER_ERRORS = {
   UPSTREAM: 'provider_upstream_error',
   CONTRACT: 'provider_contract_error',
   PAYLOAD: 'payload_validation_error'
+};
+
+const API_ERRORS = {
+  UNAUTHORIZED: 'internal_auth_unauthorized',
+  RATE_LIMITED: 'rate_limit_exceeded',
+  BAD_REQUEST: 'bad_request',
+  NOT_FOUND: 'not_found'
 };
 
 const sendJson = (res, statusCode, body) => {
@@ -60,9 +72,81 @@ class ProviderIntegrationError extends Error {
   }
 }
 
+class ApiError extends Error {
+  constructor(message, { status = 400, code = API_ERRORS.BAD_REQUEST } = {}) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
+const requestBuckets = new Map();
+
+const getClientIp = (req) => {
+  const forwardedFor = req.headers['x-forwarded-for'];
+  if (typeof forwardedFor === 'string' && forwardedFor.trim()) {
+    return forwardedFor.split(',')[0].trim();
+  }
+
+  return req.socket?.remoteAddress || 'unknown';
+};
+
+const getRateLimitIdentifier = (req) => {
+  const token = String(req.headers[INTERNAL_AUTH_HEADER] || '').trim();
+  const ip = getClientIp(req);
+
+  if (RATE_LIMIT_KEY_STRATEGY === 'token' && token) {
+    return `token:${token}`;
+  }
+  if (RATE_LIMIT_KEY_STRATEGY === 'ip') {
+    return `ip:${ip}`;
+  }
+  return token ? `token:${token}` : `ip:${ip}`;
+};
+
+const assertInternalToken = (req) => {
+  if (!INTERNAL_AUTH_TOKEN) {
+    throw new ApiError('INTERNAL_AUTH_TOKEN no está configurada en el servidor.', {
+      status: 500,
+      code: PROVIDER_ERRORS.CONFIG
+    });
+  }
+
+  const receivedToken = String(req.headers[INTERNAL_AUTH_HEADER] || '').trim();
+  if (!receivedToken || receivedToken !== INTERNAL_AUTH_TOKEN) {
+    throw new ApiError('No autorizado: token interno inválido o ausente.', {
+      status: 401,
+      code: API_ERRORS.UNAUTHORIZED
+    });
+  }
+};
+
+const assertRateLimit = (req) => {
+  const now = Date.now();
+  const key = getRateLimitIdentifier(req);
+  const bucket = requestBuckets.get(key);
+
+  if (!bucket || now >= bucket.resetAt) {
+    requestBuckets.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return;
+  }
+
+  if (bucket.count >= RATE_LIMIT_MAX_REQUESTS) {
+    throw new ApiError('Límite de solicitudes excedido. Intenta nuevamente más tarde.', {
+      status: 429,
+      code: API_ERRORS.RATE_LIMITED
+    });
+  }
+
+  bucket.count += 1;
+};
+
 const extraerJsonDeTexto = (texto = '') => {
   const input = String(texto).trim();
-  if (!input) throw new ProviderIntegrationError('El proveedor devolvió texto vacío.', { code: PROVIDER_ERRORS.CONTRACT });
+  if (!input) {
+    throw new ProviderIntegrationError('El proveedor devolvió texto vacío.', { code: PROVIDER_ERRORS.CONTRACT });
+  }
 
   try {
     return JSON.parse(input);
@@ -222,8 +306,12 @@ class OpenAIProvider {
 }
 
 const createProvider = (providerName) => {
-  if (providerName === 'anthropic') return new AnthropicProvider();
-  if (providerName === 'openai') return new OpenAIProvider();
+  if (providerName === 'anthropic') {
+    return new AnthropicProvider();
+  }
+  if (providerName === 'openai') {
+    return new OpenAIProvider();
+  }
 
   throw new ProviderIntegrationError(`AI_PROVIDER inválido: "${providerName}". Usa "anthropic" u "openai".`, {
     status: 500,
@@ -259,11 +347,23 @@ const handler = async (req, res) => {
 
   if (req.method === 'POST' && req.url === '/api/calificacion/sugerir') {
     try {
+      assertInternalToken(req);
+      assertRateLimit(req);
       const payload = await parseBody(req);
       const { datos, puntaje } = validarPayload(payload);
       const sugerencia = await activeProvider.suggestGrade({ datos, puntaje });
       sendJson(res, 200, sugerencia);
     } catch (error) {
+      if (error instanceof ApiError) {
+        sendJson(res, error.status || 400, {
+          error: {
+            message: error.message,
+            code: error.code
+          }
+        });
+        return;
+      }
+
       if (error instanceof ProviderIntegrationError) {
         sendJson(res, error.status || 500, {
           error: {
@@ -275,13 +375,23 @@ const handler = async (req, res) => {
         return;
       }
 
-      sendJson(res, 400, { error: { message: error?.message || 'No se pudo procesar la solicitud.' } });
+      sendJson(res, 400, {
+        error: {
+          message: error?.message || 'No se pudo procesar la solicitud.',
+          code: API_ERRORS.BAD_REQUEST
+        }
+      });
     }
 
     return;
   }
 
-  sendJson(res, 404, { error: { message: 'Ruta no encontrada.' } });
+  sendJson(res, 404, {
+    error: {
+      message: 'Ruta no encontrada.',
+      code: API_ERRORS.NOT_FOUND
+    }
+  });
 };
 
 const server = http.createServer((req, res) => {

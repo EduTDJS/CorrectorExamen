@@ -148,6 +148,11 @@ Para mejorar la precisión del OCR cuando se corrige por imagen:
 - `OPENAI_API_KEY` (obligatoria si `AI_PROVIDER=openai`).
 - `OPENAI_MODEL` (opcional, default `gpt-4o-mini`).
 - `AI_REQUEST_TIMEOUT_MS` (opcional, default `20000`).
+- `INTERNAL_AUTH_TOKEN` (obligatoria): token compartido esperado en header interno para proteger `POST /api/calificacion/sugerir`.
+- `INTERNAL_AUTH_HEADER` (opcional, default `x-internal-token`): nombre del header donde se envía el token interno.
+- `RATE_LIMIT_WINDOW_MS` (opcional, default `60000`): ventana temporal de rate limit en milisegundos.
+- `RATE_LIMIT_MAX_REQUESTS` (opcional, default `20`): máximo de solicitudes permitidas por ventana.
+- `RATE_LIMIT_KEY_STRATEGY` (opcional, default `token_or_ip`): estrategia de partición para rate limit (`token`, `ip`, `token_or_ip`).
 - `PORT` (opcional, por defecto `8787`).
 
 ## Ejecución local
@@ -155,7 +160,7 @@ Para mejorar la precisión del OCR cuando se corrige por imagen:
 1. Inicia backend en una terminal:
 
 ```bash
-AI_PROVIDER=anthropic ANTHROPIC_API_KEY=tu_key npm run dev:api
+AI_PROVIDER=anthropic ANTHROPIC_API_KEY=tu_key INTERNAL_AUTH_TOKEN=token_interno_seguro npm run dev:api
 ```
 
 2. Inicia frontend en otra terminal:
@@ -169,5 +174,5 @@ npm run dev
 Ejemplo con OpenAI:
 
 ```bash
-AI_PROVIDER=openai OPENAI_API_KEY=tu_key OPENAI_MODEL=gpt-4o-mini npm run dev:api
+AI_PROVIDER=openai OPENAI_API_KEY=tu_key OPENAI_MODEL=gpt-4o-mini INTERNAL_AUTH_TOKEN=token_interno_seguro npm run dev:api
 ```
