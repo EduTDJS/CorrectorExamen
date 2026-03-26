@@ -21,7 +21,37 @@ Frontend web para configurar, corregir y exportar resultados de exámenes.
 3. Procesamiento OCR en cliente con Tesseract.js y parser por número de pregunta.
 4. Revisión editable de respuestas en tabla antes de calificar.
 5. Revisión de calificaciones (aciertos, errores, porcentaje y puntaje).
-6. Reporte final con opción de exportación simulada.
+6. Sugerencia de calificación con Anthropic (`claude-sonnet-4-20250514`) usando prompt interno en español con criterios contables.
+7. Reporte final con decisión final editable de la profesora y exportación simulada.
+
+## Ajustes y seguridad de API key
+
+- Hay un panel **Ajustes API** para capturar la API key de Anthropic.
+- La API key se guarda localmente en `localStorage` y **no se hardcodea** en el código.
+- Puede guardarse o eliminarse desde la UI.
+
+## Integración de IA y parsing
+
+- Se realiza `fetch` directo a `https://api.anthropic.com/v1/messages`.
+- El prompt interno exige salida JSON con:
+  - `puntuacion_sugerida`
+  - `justificacion_breve`
+- La respuesta se parsea de forma robusta extrayendo JSON del texto devuelto.
+- La sugerencia de IA autocompleta la decisión final, pero siempre puede editarse manualmente.
+
+## Persistencia de decisión final
+
+- La puntuación y justificación finales de la profesora se persisten en `localStorage`.
+- Se guarda siempre la decisión final editable, independientemente de la sugerencia de IA.
+
+## Manejo robusto de errores
+
+La UI muestra errores claros en español para:
+
+- API key inválida o sin permisos (`401` / `authentication_error`).
+- Límite de cuota/tasa (`429` / `rate_limit_error`).
+- Timeout de red (cancelación tras 20 segundos).
+- Respuestas de IA mal formadas o con puntuación fuera de rango.
 
 ## OCR y parsing
 
