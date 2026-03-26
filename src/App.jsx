@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { jsPDF } from 'jspdf';
 import Tesseract from 'tesseract.js';
 
 const pasos = [
@@ -10,11 +11,14 @@ const pasos = [
 
 const STORAGE_API_KEY = 'corrector_anthropic_api_key';
 const STORAGE_DECISION_FINAL = 'corrector_decision_final';
+const STORAGE_REPORTES = 'corrector_historial_reportes_v1';
 
 const formularioInicial = {
   materia: '',
   grupo: '',
   fecha: '',
+  estudianteNombre: '',
+  estudianteMatricula: '',
   totalPreguntas: '',
   claveRespuestas: '',
   modoIngreso: 'transcripcion',
@@ -87,43 +91,6 @@ const extraerJsonDeTexto = (texto = '') => {
   return JSON.parse(bloque[0]);
 };
 
-const construirPromptContable = ({
-  materia,
-  grupo,
-  fecha,
-  totalPreguntas,
-  claveLimpia,
-  respuestasLimpias,
-  resultadoRevision
-}) => {
-  return [
-    'Eres una profesora experta en contabilidad y evaluación formativa.',
-    'Evalúa la resolución de un examen usando criterios contables estrictos y devuelve una sugerencia final.',
-    '',
-    'Criterios obligatorios de análisis contable:',
-    '1) Asientos contables: estructura correcta y cuentas involucradas.',
-    '2) Débitos y créditos: naturaleza de las cuentas y equilibrio del registro.',
-    '3) Cálculos: exactitud numérica, redondeos y coherencia de resultados.',
-    '4) Procedimiento: secuencia lógica y orden de los pasos de resolución.',
-    '5) Conceptos: uso correcto de principios y terminología contable.',
-    '',
-    'Datos del examen:',
-    `- Materia: ${materia}`,
-    `- Grupo: ${grupo}`,
-    `- Fecha: ${fecha}`,
-    `- Total de preguntas: ${totalPreguntas}`,
-    `- Clave oficial: ${claveLimpia}`,
-    `- Respuestas del estudiante: ${respuestasLimpias}`,
-    `- Aciertos automáticos detectados: ${resultadoRevision.aciertos}`,
-    `- Errores automáticos detectados: ${resultadoRevision.errores}`,
-    `- Puntaje automático actual: ${resultadoRevision.puntaje.toFixed(2)} / 100`,
-    '',
-    'Responde SOLO en JSON válido con este formato exacto:',
-    '{"puntuacion_sugerida": number, "justificacion_breve": "texto breve en español"}',
-    'La puntuación debe estar entre 0 y 100.'
-  ].join('\n');
-};
-
 const leerApiKey = () => window.localStorage.getItem(STORAGE_API_KEY) || '';
 
 const leerDecisionFinal = () => {
@@ -139,6 +106,44 @@ const leerDecisionFinal = () => {
   } catch {
     return decisionFinalInicial;
   }
+};
+
+const leerReportes = () => {
+  const crudo = window.localStorage.getItem(STORAGE_REPORTES);
+  if (!crudo) return [];
+  try {
+    const parseado = JSON.parse(crudo);
+    return Array.isArray(parseado) ? parseado : [];
+  } catch {
+    return [];
+  }
+};
+
+const mapearLetraPucmm = (nota) => {
+  const n = Number(nota);
+  if (n >= 90) return 'A';
+  if (n >= 85) return 'B+';
+  if (n >= 80) return 'B';
+  if (n >= 75) return 'C+';
+  if (n >= 70) return 'C';
+  if (n >= 65) return 'D';
+  return 'F';
+};
+
+const escaparCsv = (valor) => {
+  const texto = String(valor ?? '');
+  if (/[,"\n]/.test(texto)) return `"${texto.replace(/"/g, '""')}"`;
+  return texto;
+};
+
+const descargarArchivo = (contenido, nombre, tipo = 'text/plain;charset=utf-8;') => {
+  const blob = new Blob([contenido], { type: tipo });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombre;
+  a.click();
+  URL.revokeObjectURL(url);
 };
 
 function App() {
@@ -163,6 +168,12 @@ function App() {
     error: '',
     sugerencia: null
   });
+  const [reportes, setReportes] = useState(() => leerReportes());
+  const [filtrosHistorial, setFiltrosHistorial] = useState({
+    materia: '',
+    grupo: '',
+    fecha: ''
+  });
 
   useEffect(() => {
     setApiKeyTemporal(leerApiKey());
@@ -171,6 +182,10 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(STORAGE_DECISION_FINAL, JSON.stringify(decisionFinal));
   }, [decisionFinal]);
+
+  useEffect(() => {
+    window.localStorage.setItem(STORAGE_REPORTES, JSON.stringify(reportes));
+  }, [reportes]);
 
   const totalPreguntasNumero = Number(datos.totalPreguntas);
 
@@ -190,20 +205,30 @@ function App() {
       .replace(/[^ABCD]/g, '');
   }, [datos.claveRespuestas]);
 
+  const desglosePreguntas = useMemo(() => {
+    const total = totalPreguntasNumero > 0 ? totalPreguntasNumero : Math.max(claveLimpia.length, respuestasLimpias.length);
+    return Array.from({ length: total }, (_, indice) => {
+      const correcta = claveLimpia[indice] || '';
+      const estudiante = respuestasLista[indice] || '';
+      const esCorrecta = Boolean(correcta && estudiante && correcta === estudiante);
+      const puntaje = esCorrecta ? puntosPorPregunta : 0;
+
+      return {
+        numero: indice + 1,
+        respuestaCorrecta: correcta,
+        respuestaEstudiante: estudiante,
+        correcta: esCorrecta,
+        puntaje,
+        justificacionIA: esCorrecta
+          ? 'Coincide con la clave oficial; mantiene el criterio contable esperado.'
+          : 'No coincide con la clave oficial; requiere reforzar procedimiento y conceptos.'
+      };
+    });
+  }, [totalPreguntasNumero, claveLimpia, respuestasLista, respuestasLimpias.length, puntosPorPregunta]);
+
   const resultadoRevision = useMemo(() => {
-    if (!claveLimpia || !respuestasLimpias) {
-      return { aciertos: 0, errores: 0, porcentaje: 0, puntaje: 0 };
-    }
-
-    const total = Math.min(claveLimpia.length, respuestasLimpias.length);
-    let aciertos = 0;
-
-    for (let i = 0; i < total; i += 1) {
-      if (claveLimpia[i] === respuestasLimpias[i]) {
-        aciertos += 1;
-      }
-    }
-
+    const aciertos = desglosePreguntas.filter((item) => item.correcta).length;
+    const total = desglosePreguntas.length;
     const erroresConteo = total - aciertos;
     const porcentaje = total > 0 ? (aciertos / total) * 100 : 0;
 
@@ -211,9 +236,29 @@ function App() {
       aciertos,
       errores: erroresConteo,
       porcentaje,
-      puntaje: aciertos * puntosPorPregunta
+      puntaje: desglosePreguntas.reduce((acc, item) => acc + item.puntaje, 0)
     };
-  }, [claveLimpia, respuestasLimpias, puntosPorPregunta]);
+  }, [desglosePreguntas]);
+
+  const notaFinalNumerica = Number(decisionFinal.puntuacion || resultadoRevision.puntaje || 0);
+  const letraFinal = mapearLetraPucmm(notaFinalNumerica);
+
+  const reportesFiltrados = useMemo(() => {
+    return reportes.filter((reporte) => {
+      const materiaValida = !filtrosHistorial.materia || reporte.examen.materia === filtrosHistorial.materia;
+      const grupoValido = !filtrosHistorial.grupo || reporte.examen.grupo === filtrosHistorial.grupo;
+      const fechaValida = !filtrosHistorial.fecha || reporte.examen.fecha === filtrosHistorial.fecha;
+      return materiaValida && grupoValido && fechaValida;
+    });
+  }, [reportes, filtrosHistorial]);
+
+  const estadisticasGrupo = useMemo(() => {
+    const distribucion = { A: 0, 'B+': 0, B: 0, 'C+': 0, C: 0, D: 0, F: 0 };
+    reportesFiltrados.forEach((rep) => {
+      distribucion[rep.calificacionFinal.letra] += 1;
+    });
+    return distribucion;
+  }, [reportesFiltrados]);
 
   const actualizarDato = (campo, valor) => {
     setDatos((previo) => ({ ...previo, [campo]: valor }));
@@ -241,15 +286,12 @@ function App() {
       if (!datos.materia.trim()) nuevosErrores.materia = 'La materia es obligatoria.';
       if (!datos.grupo.trim()) nuevosErrores.grupo = 'El grupo es obligatorio.';
       if (!datos.fecha) nuevosErrores.fecha = 'La fecha es obligatoria.';
+      if (!datos.estudianteNombre.trim()) nuevosErrores.estudianteNombre = 'El nombre del estudiante es obligatorio.';
+      if (!datos.estudianteMatricula.trim()) nuevosErrores.estudianteMatricula = 'La matrícula del estudiante es obligatoria.';
 
       const totalPreguntas = Number(datos.totalPreguntas);
       if (!totalPreguntas || totalPreguntas <= 0) {
         nuevosErrores.totalPreguntas = 'Ingrese un total de preguntas válido.';
-      } else {
-        const sumaPuntos = totalPreguntas * (100 / totalPreguntas);
-        if (Math.round(sumaPuntos) !== 100) {
-          nuevosErrores.totalPreguntas = 'La suma de puntos debe ser igual a 100.';
-        }
       }
 
       if (!datos.claveRespuestas.trim()) {
@@ -269,19 +311,7 @@ function App() {
       }
     }
 
-    if (indice === 2) {
-      if (!claveLimpia || !respuestasLimpias) {
-        nuevosErrores.revision =
-          'Se necesitan clave y respuestas del estudiante para revisar calificaciones.';
-      }
-    }
-
     if (indice === 3) {
-      if (!datos.materia || !datos.grupo || !datos.fecha) {
-        nuevosErrores.reporte =
-          'Complete los datos de configuración para generar el reporte final.';
-      }
-
       if (!decisionFinal.puntuacion || !decisionFinal.justificacion.trim()) {
         nuevosErrores.decisionFinal =
           'Debe registrar puntuación y justificación final de la profesora.';
@@ -354,15 +384,15 @@ function App() {
     const timeoutId = setTimeout(() => controller.abort(), 20000);
 
     try {
-      const prompt = construirPromptContable({
-        materia: datos.materia,
-        grupo: datos.grupo,
-        fecha: datos.fecha,
-        totalPreguntas: datos.totalPreguntas,
-        claveLimpia,
-        respuestasLimpias,
-        resultadoRevision
-      });
+      const prompt = [
+        'Eres una profesora experta en contabilidad y evaluación formativa.',
+        `Materia: ${datos.materia}`,
+        `Grupo: ${datos.grupo}`,
+        `Fecha: ${datos.fecha}`,
+        `Total de preguntas: ${datos.totalPreguntas}`,
+        `Puntaje automático actual: ${resultadoRevision.puntaje.toFixed(2)} / 100`,
+        'Responde SOLO JSON: {"puntuacion_sugerida": number, "justificacion_breve": "texto"}'
+      ].join('\n');
 
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -381,20 +411,7 @@ function App() {
       });
 
       const data = await response.json();
-
-      if (!response.ok) {
-        const tipoError = data?.error?.type;
-
-        if (response.status === 401 || tipoError === 'authentication_error') {
-          throw new Error('API key inválida o sin permisos. Verifique su API key en Ajustes.');
-        }
-
-        if (response.status === 429 || tipoError === 'rate_limit_error') {
-          throw new Error('Se alcanzó el límite de cuota o tasa de peticiones de Anthropic. Intente más tarde.');
-        }
-
-        throw new Error(data?.error?.message || 'Error inesperado al consultar Anthropic.');
-      }
+      if (!response.ok) throw new Error(data?.error?.message || 'Error inesperado al consultar Anthropic.');
 
       const textoIa = (data?.content || [])
         .filter((bloque) => bloque?.type === 'text')
@@ -417,22 +434,143 @@ function App() {
       setDecisionFinal(sugerencia);
       setErrores((previo) => ({ ...previo, decisionFinal: '' }));
     } catch (error) {
-      if (error?.name === 'AbortError') {
-        setIaEstado({
-          cargando: false,
-          error: 'La solicitud excedió el tiempo límite (20s). Intente de nuevo.',
-          sugerencia: null
-        });
-      } else {
-        setIaEstado({
-          cargando: false,
-          error: error?.message || 'No se pudo obtener sugerencia de IA.',
-          sugerencia: null
-        });
-      }
+      setIaEstado({
+        cargando: false,
+        error: error?.name === 'AbortError' ? 'La solicitud excedió el tiempo límite (20s).' : (error?.message || 'No se pudo obtener sugerencia de IA.'),
+        sugerencia: null
+      });
     } finally {
       clearTimeout(timeoutId);
     }
+  };
+
+  const generarReporteActual = () => {
+    const reporte = {
+      id: crypto.randomUUID(),
+      creadoEn: new Date().toISOString(),
+      examen: {
+        materia: datos.materia,
+        grupo: datos.grupo,
+        fecha: datos.fecha,
+        totalPreguntas: totalPreguntasNumero,
+        claveRespuestas: claveLimpia
+      },
+      estudiante: {
+        nombre: datos.estudianteNombre,
+        matricula: datos.estudianteMatricula
+      },
+      respuestas: {
+        lista: respuestasLista,
+        texto: respuestasLimpias
+      },
+      puntuacionPorPregunta: desglosePreguntas,
+      justificacionesIA: desglosePreguntas.map((item) => ({
+        pregunta: item.numero,
+        justificacion: item.justificacionIA
+      })),
+      calificacionFinal: {
+        notaSobre100: notaFinalNumerica,
+        letra: letraFinal,
+        justificacionDocente: decisionFinal.justificacion
+      }
+    };
+
+    setReportes((previo) => [reporte, ...previo]);
+    return reporte;
+  };
+
+  const exportarIndividualCSV = (reporte) => {
+    const filas = [
+      ['Materia', reporte.examen.materia],
+      ['Grupo', reporte.examen.grupo],
+      ['Fecha', reporte.examen.fecha],
+      ['Estudiante', reporte.estudiante.nombre],
+      ['Matrícula', reporte.estudiante.matricula],
+      ['Nota', reporte.calificacionFinal.notaSobre100.toFixed(2)],
+      ['Letra', reporte.calificacionFinal.letra],
+      [],
+      ['Pregunta', 'Correcta', 'Estudiante', 'Puntaje', 'Justificación IA']
+    ];
+
+    reporte.puntuacionPorPregunta.forEach((item) => {
+      filas.push([
+        item.numero,
+        item.respuestaCorrecta,
+        item.respuestaEstudiante,
+        item.puntaje.toFixed(2),
+        item.justificacionIA
+      ]);
+    });
+
+    const csv = filas.map((fila) => fila.map(escaparCsv).join(',')).join('\n');
+    descargarArchivo(csv, `reporte_${reporte.estudiante.matricula || 'estudiante'}.csv`, 'text/csv;charset=utf-8;');
+  };
+
+  const exportarIndividualPDF = (reporte) => {
+    const doc = new jsPDF();
+    let y = 12;
+
+    doc.setFontSize(14);
+    doc.text('Reporte individual de calificación', 14, y);
+    y += 8;
+    doc.setFontSize(10);
+
+    const encabezado = [
+      `Materia: ${reporte.examen.materia}`,
+      `Grupo: ${reporte.examen.grupo}`,
+      `Fecha: ${reporte.examen.fecha}`,
+      `Estudiante: ${reporte.estudiante.nombre} (${reporte.estudiante.matricula})`,
+      `Nota final: ${reporte.calificacionFinal.notaSobre100.toFixed(2)} / 100 (${reporte.calificacionFinal.letra})`
+    ];
+
+    encabezado.forEach((linea) => {
+      doc.text(linea, 14, y);
+      y += 6;
+    });
+
+    y += 2;
+    doc.text('Desglose por pregunta:', 14, y);
+    y += 6;
+
+    reporte.puntuacionPorPregunta.forEach((item) => {
+      const linea = `P${item.numero}: C=${item.respuestaCorrecta || '-'} E=${item.respuestaEstudiante || '-'} Pts=${item.puntaje.toFixed(2)}`;
+      doc.text(linea, 14, y);
+      y += 5;
+      const justificacion = doc.splitTextToSize(`IA: ${item.justificacionIA}`, 180);
+      doc.text(justificacion, 14, y);
+      y += justificacion.length * 4 + 2;
+
+      if (y > 270) {
+        doc.addPage();
+        y = 14;
+      }
+    });
+
+    doc.save(`reporte_${reporte.estudiante.matricula || 'estudiante'}.pdf`);
+  };
+
+  const exportarGrupoCSV = () => {
+    const filas = [['Nombre', 'Matrícula', 'Materia', 'Grupo', 'Fecha', 'Nota', 'Letra']];
+    reportesFiltrados.forEach((rep) => {
+      filas.push([
+        rep.estudiante.nombre,
+        rep.estudiante.matricula,
+        rep.examen.materia,
+        rep.examen.grupo,
+        rep.examen.fecha,
+        rep.calificacionFinal.notaSobre100.toFixed(2),
+        rep.calificacionFinal.letra
+      ]);
+    });
+    const csv = filas.map((fila) => fila.map(escaparCsv).join(',')).join('\n');
+    descargarArchivo(csv, 'reporte_grupal.csv', 'text/csv;charset=utf-8;');
+  };
+
+  const guardarYExportar = (tipo) => {
+    if (!validarPaso(3)) return;
+    const reporte = generarReporteActual();
+    if (tipo === 'pdf') exportarIndividualPDF(reporte);
+    if (tipo === 'csv') exportarIndividualCSV(reporte);
   };
 
   const guardarApiKey = () => {
@@ -448,17 +586,10 @@ function App() {
 
   const avanzarPaso = async () => {
     if (!validarPaso(pasoActual)) return;
-
     cambiarEstadoPaso(pasoActual, { cargando: true, error: '' });
     try {
-      await new Promise((resolve) => setTimeout(resolve, 700));
-      if (pasoActual < pasos.length - 1) {
-        setPasoActual((previo) => previo + 1);
-      }
-    } catch (error) {
-      cambiarEstadoPaso(pasoActual, {
-        error: 'Ocurrió un error al continuar. Inténtelo nuevamente.'
-      });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      if (pasoActual < pasos.length - 1) setPasoActual((previo) => previo + 1);
     } finally {
       cambiarEstadoPaso(pasoActual, { cargando: false });
     }
@@ -466,21 +597,7 @@ function App() {
 
   const retrocederPaso = () => {
     setErrores({});
-    if (pasoActual > 0) {
-      setPasoActual((previo) => previo - 1);
-    }
-  };
-
-  const exportarReporte = async () => {
-    cambiarEstadoPaso(3, { cargando: true, error: '' });
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 900));
-      window.alert('Reporte exportado correctamente en formato PDF (simulado).');
-    } catch (error) {
-      cambiarEstadoPaso(3, { error: 'No se pudo exportar el reporte final.' });
-    } finally {
-      cambiarEstadoPaso(3, { cargando: false });
-    }
+    if (pasoActual > 0) setPasoActual((previo) => previo - 1);
   };
 
   const estadoActual = estadoPaso[pasoActual];
@@ -531,60 +648,18 @@ function App() {
         {pasoActual === 0 && (
           <div className="paso">
             <h2>Configuración del examen</h2>
-            <label>
-              Materia
-              <input
-                value={datos.materia}
-                onChange={(e) => actualizarDato('materia', e.target.value)}
-              />
-              {errores.materia && <span className="error">{errores.materia}</span>}
+            <label>Materia<input value={datos.materia} onChange={(e) => actualizarDato('materia', e.target.value)} />{errores.materia && <span className="error">{errores.materia}</span>}</label>
+            <label>Grupo<input value={datos.grupo} onChange={(e) => actualizarDato('grupo', e.target.value)} />{errores.grupo && <span className="error">{errores.grupo}</span>}</label>
+            <label>Fecha<input type="date" value={datos.fecha} onChange={(e) => actualizarDato('fecha', e.target.value)} />{errores.fecha && <span className="error">{errores.fecha}</span>}</label>
+            <label>Nombre estudiante<input value={datos.estudianteNombre} onChange={(e) => actualizarDato('estudianteNombre', e.target.value)} />{errores.estudianteNombre && <span className="error">{errores.estudianteNombre}</span>}</label>
+            <label>Matrícula estudiante<input value={datos.estudianteMatricula} onChange={(e) => actualizarDato('estudianteMatricula', e.target.value)} />{errores.estudianteMatricula && <span className="error">{errores.estudianteMatricula}</span>}</label>
+            <label> Total de preguntas
+              <input type="number" min="1" value={datos.totalPreguntas} onChange={(e) => { actualizarDato('totalPreguntas', e.target.value); setRespuestasLista((previo) => convertirTextoALista(previo.join(''), e.target.value)); }} />
+              {errores.totalPreguntas && (<span className="error">{errores.totalPreguntas}</span>)}
             </label>
-
-            <label>
-              Grupo
-              <input
-                value={datos.grupo}
-                onChange={(e) => actualizarDato('grupo', e.target.value)}
-              />
-              {errores.grupo && <span className="error">{errores.grupo}</span>}
-            </label>
-
-            <label>
-              Fecha
-              <input
-                type="date"
-                value={datos.fecha}
-                onChange={(e) => actualizarDato('fecha', e.target.value)}
-              />
-              {errores.fecha && <span className="error">{errores.fecha}</span>}
-            </label>
-
-            <label>
-              Total de preguntas
-              <input
-                type="number"
-                min="1"
-                value={datos.totalPreguntas}
-                onChange={(e) => {
-                  actualizarDato('totalPreguntas', e.target.value);
-                  setRespuestasLista((previo) => convertirTextoALista(previo.join(''), e.target.value));
-                }}
-              />
-              {errores.totalPreguntas && (
-                <span className="error">{errores.totalPreguntas}</span>
-              )}
-            </label>
-
-            <label>
-              Clave de respuestas (solo A/B/C/D)
-              <input
-                value={datos.claveRespuestas}
-                onChange={(e) => actualizarDato('claveRespuestas', e.target.value)}
-                placeholder="Ejemplo: ABCDABCD"
-              />
-              {errores.claveRespuestas && (
-                <span className="error">{errores.claveRespuestas}</span>
-              )}
+            <label>Clave de respuestas (solo A/B/C/D)
+              <input value={datos.claveRespuestas} onChange={(e) => actualizarDato('claveRespuestas', e.target.value)} placeholder="Ejemplo: ABCDABCD" />
+              {errores.claveRespuestas && (<span className="error">{errores.claveRespuestas}</span>)}
             </label>
             <p className="detalle">Cada pregunta vale {puntosPorPregunta.toFixed(2)} puntos.</p>
           </div>
@@ -593,200 +668,119 @@ function App() {
         {pasoActual === 1 && (
           <div className="paso">
             <h2>Ingreso de respuestas</h2>
-            <label>
-              Método de ingreso
-              <select
-                value={datos.modoIngreso}
-                onChange={(e) => actualizarDato('modoIngreso', e.target.value)}
-              >
+            <label>Método de ingreso
+              <select value={datos.modoIngreso} onChange={(e) => actualizarDato('modoIngreso', e.target.value)}>
                 <option value="transcripcion">Transcripción manual</option>
                 <option value="imagen">Carga de imagen</option>
               </select>
             </label>
 
             {datos.modoIngreso === 'transcripcion' ? (
-              <label>
-                Respuestas del estudiante (A/B/C/D)
-                <textarea
-                  rows="4"
-                  value={textoManual}
-                  onChange={(e) => setRespuestasLista(convertirTextoALista(e.target.value, totalPreguntasNumero))}
-                  placeholder="Ejemplo: ABCCDA"
-                />
-                {errores.respuestasEstudiante && (
-                  <span className="error">{errores.respuestasEstudiante}</span>
-                )}
+              <label>Respuestas del estudiante (A/B/C/D)
+                <textarea rows="4" value={textoManual} onChange={(e) => setRespuestasLista(convertirTextoALista(e.target.value, totalPreguntasNumero))} placeholder="Ejemplo: ABCCDA" />
+                {errores.respuestasEstudiante && (<span className="error">{errores.respuestasEstudiante}</span>)}
               </label>
             ) : (
               <>
-                <label>
-                  Foto o escaneo de respuestas
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => actualizarDato('archivoImagen', e.target.files?.[0] || null)}
-                  />
-                </label>
-
-                <button
-                  type="button"
-                  onClick={procesarImagenConOCR}
-                  disabled={!datos.archivoImagen || ocrEstado.procesando}
-                >
-                  {ocrEstado.procesando ? 'Procesando OCR...' : 'Procesar imagen con OCR'}
-                </button>
-
-                {ocrEstado.procesando && (
-                  <div className="progreso-ocr">
-                    <progress value={ocrEstado.progreso} max="100" />
-                    <span>{ocrEstado.progreso}% completado</span>
-                  </div>
-                )}
-
+                <label>Foto o escaneo de respuestas<input type="file" accept="image/*" onChange={(e) => actualizarDato('archivoImagen', e.target.files?.[0] || null)} /></label>
+                <button type="button" onClick={procesarImagenConOCR} disabled={!datos.archivoImagen || ocrEstado.procesando}>{ocrEstado.procesando ? 'Procesando OCR...' : 'Procesar imagen con OCR'}</button>
+                {ocrEstado.procesando && (<div className="progreso-ocr"><progress value={ocrEstado.progreso} max="100" /><span>{ocrEstado.progreso}% completado</span></div>)}
                 {ocrEstado.error && <p className="error">{ocrEstado.error}</p>}
                 {errores.archivoImagen && <span className="error">{errores.archivoImagen}</span>}
-                {errores.respuestasEstudiante && (
-                  <span className="error">{errores.respuestasEstudiante}</span>
-                )}
               </>
             )}
 
             <div>
               <h3>Respuestas extraídas / editables</h3>
               <table className="tabla-respuestas">
-                <thead>
-                  <tr>
-                    <th>Pregunta</th>
-                    <th>Respuesta</th>
-                  </tr>
-                </thead>
+                <thead><tr><th>Pregunta</th><th>Respuesta</th></tr></thead>
                 <tbody>
                   {Array.from({ length: totalFilasTabla }, (_, indice) => (
-                    <tr key={`pregunta-${indice + 1}`}>
-                      <td>{indice + 1}</td>
-                      <td>
-                        <select
-                          value={respuestasLista[indice] || ''}
-                          onChange={(e) => actualizarRespuesta(indice, e.target.value)}
-                        >
-                          <option value="">Sin marcar</option>
-                          {letrasValidas.map((letra) => (
-                            <option key={letra} value={letra}>
-                              {letra}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    </tr>
+                    <tr key={`pregunta-${indice + 1}`}><td>{indice + 1}</td><td><select value={respuestasLista[indice] || ''} onChange={(e) => actualizarRespuesta(indice, e.target.value)}><option value="">Sin marcar</option>{letrasValidas.map((letra) => (<option key={letra} value={letra}>{letra}</option>))}</select></td></tr>
                   ))}
                 </tbody>
               </table>
             </div>
-
-            {ocrEstado.textoDetectado && (
-              <details>
-                <summary>Ver texto bruto detectado por OCR</summary>
-                <pre className="ocr-texto">{ocrEstado.textoDetectado}</pre>
-              </details>
-            )}
           </div>
         )}
 
         {pasoActual === 2 && (
           <div className="paso">
             <h2>Revisión de calificaciones</h2>
-            {errores.revision && <p className="error">{errores.revision}</p>}
-            <div className="resumen">
-              <p>Aciertos: {resultadoRevision.aciertos}</p>
-              <p>Errores: {resultadoRevision.errores}</p>
-              <p>Porcentaje: {resultadoRevision.porcentaje.toFixed(2)}%</p>
-              <p>Puntaje: {resultadoRevision.puntaje.toFixed(2)} / 100</p>
-            </div>
-
-            <button type="button" onClick={sugerirCalificacionConIA} disabled={iaEstado.cargando}>
-              {iaEstado.cargando ? 'Consultando IA...' : 'Sugerir calificación con IA (Anthropic)'}
-            </button>
-
+            <div className="resumen"><p>Aciertos: {resultadoRevision.aciertos}</p><p>Errores: {resultadoRevision.errores}</p><p>Porcentaje: {resultadoRevision.porcentaje.toFixed(2)}%</p><p>Puntaje: {resultadoRevision.puntaje.toFixed(2)} / 100</p><p>Letra PUCMM: {mapearLetraPucmm(resultadoRevision.puntaje)}</p></div>
+            <button type="button" onClick={sugerirCalificacionConIA} disabled={iaEstado.cargando}>{iaEstado.cargando ? 'Consultando IA...' : 'Sugerir calificación con IA (Anthropic)'}</button>
             {iaEstado.error && <p className="error">{iaEstado.error}</p>}
-
-            {iaEstado.sugerencia && (
-              <div className="sugerencia-ia">
-                <h3>Sugerencia de IA</h3>
-                <p>Puntuación sugerida: {iaEstado.sugerencia.puntuacion}</p>
-                <p>Justificación: {iaEstado.sugerencia.justificacion}</p>
-              </div>
-            )}
+            <table className="tabla-respuestas">
+              <thead><tr><th>Pregunta</th><th>Correcta</th><th>Estudiante</th><th>Puntaje</th><th>Justificación IA</th></tr></thead>
+              <tbody>
+                {desglosePreguntas.map((item) => (
+                  <tr key={item.numero}><td>{item.numero}</td><td>{item.respuestaCorrecta || '-'}</td><td>{item.respuestaEstudiante || '-'}</td><td>{item.puntaje.toFixed(2)}</td><td>{item.justificacionIA}</td></tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
 
         {pasoActual === 3 && (
           <div className="paso">
             <h2>Reporte final y exportación</h2>
-            {errores.reporte && <p className="error">{errores.reporte}</p>}
             <ul className="resumen-final">
+              <li>Estudiante: {datos.estudianteNombre} ({datos.estudianteMatricula})</li>
               <li>Materia: {datos.materia || 'Sin definir'}</li>
               <li>Grupo: {datos.grupo || 'Sin definir'}</li>
               <li>Fecha: {datos.fecha || 'Sin definir'}</li>
-              <li>Puntaje automático: {resultadoRevision.puntaje.toFixed(2)} / 100</li>
+              <li>Puntaje final: {notaFinalNumerica.toFixed(2)} / 100</li>
+              <li>Letra final PUCMM: {letraFinal}</li>
             </ul>
 
             <div className="decision-final">
               <h3>Decisión final de la profesora</h3>
-              <label>
-                Puntuación final (0-100)
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={decisionFinal.puntuacion}
-                  onChange={(e) =>
-                    setDecisionFinal((previo) => ({ ...previo, puntuacion: e.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                Justificación final
-                <textarea
-                  rows="3"
-                  value={decisionFinal.justificacion}
-                  onChange={(e) =>
-                    setDecisionFinal((previo) => ({ ...previo, justificacion: e.target.value }))
-                  }
-                />
-              </label>
+              <label>Puntuación final (0-100)<input type="number" min="0" max="100" step="0.01" value={decisionFinal.puntuacion} onChange={(e) => setDecisionFinal((previo) => ({ ...previo, puntuacion: e.target.value }))} /></label>
+              <label>Justificación final<textarea rows="3" value={decisionFinal.justificacion} onChange={(e) => setDecisionFinal((previo) => ({ ...previo, justificacion: e.target.value }))} /></label>
               {errores.decisionFinal && <p className="error">{errores.decisionFinal}</p>}
-              <p className="detalle">
-                Este valor se persiste siempre como decisión final, incluso si se modifica la sugerencia de IA.
-              </p>
             </div>
 
-            <button
-              type="button"
-              onClick={exportarReporte}
-              disabled={estadoPaso[3].cargando}
-            >
-              {estadoPaso[3].cargando ? 'Exportando reporte...' : 'Exportar reporte'}
-            </button>
-            {estadoPaso[3].error && <p className="error">{estadoPaso[3].error}</p>}
+            <div className="acciones-ajustes">
+              <button type="button" onClick={() => guardarYExportar('pdf')}>Guardar y exportar PDF</button>
+              <button type="button" onClick={() => guardarYExportar('csv')}>Guardar y exportar CSV</button>
+            </div>
+
+            <h3>Vista de grupo e historial</h3>
+            <div className="filtros-grid">
+              <label>Materia
+                <input value={filtrosHistorial.materia} onChange={(e) => setFiltrosHistorial((p) => ({ ...p, materia: e.target.value }))} placeholder="Filtrar por materia" />
+              </label>
+              <label>Grupo
+                <input value={filtrosHistorial.grupo} onChange={(e) => setFiltrosHistorial((p) => ({ ...p, grupo: e.target.value }))} placeholder="Filtrar por grupo" />
+              </label>
+              <label>Fecha
+                <input type="date" value={filtrosHistorial.fecha} onChange={(e) => setFiltrosHistorial((p) => ({ ...p, fecha: e.target.value }))} />
+              </label>
+            </div>
+
+            <table className="tabla-respuestas">
+              <thead><tr><th>Estudiante</th><th>Matrícula</th><th>Materia</th><th>Grupo</th><th>Fecha</th><th>Nota</th><th>Letra</th></tr></thead>
+              <tbody>
+                {reportesFiltrados.map((rep) => (
+                  <tr key={rep.id}><td>{rep.estudiante.nombre}</td><td>{rep.estudiante.matricula}</td><td>{rep.examen.materia}</td><td>{rep.examen.grupo}</td><td>{rep.examen.fecha}</td><td>{rep.calificacionFinal.notaSobre100.toFixed(2)}</td><td>{rep.calificacionFinal.letra}</td></tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div className="resumen">
+              <p>Distribución de letras: A ({estadisticasGrupo.A}), B+ ({estadisticasGrupo['B+']}), B ({estadisticasGrupo.B}), C+ ({estadisticasGrupo['C+']}), C ({estadisticasGrupo.C}), D ({estadisticasGrupo.D}), F ({estadisticasGrupo.F})</p>
+            </div>
+
+            <button type="button" onClick={exportarGrupoCSV}>Exportar CSV grupal</button>
           </div>
         )}
       </section>
 
       {estadoActual.cargando && <p className="info">Procesando paso...</p>}
-      {estadoActual.error && <p className="error">{estadoActual.error}</p>}
 
       <footer className="acciones">
-        <button type="button" onClick={retrocederPaso} disabled={pasoActual === 0 || estadoActual.cargando}>
-          Anterior
-        </button>
-        <button
-          type="button"
-          onClick={avanzarPaso}
-          disabled={pasoActual === pasos.length - 1 || estadoActual.cargando}
-        >
-          {estadoActual.cargando ? 'Cargando...' : 'Siguiente'}
-        </button>
+        <button type="button" onClick={retrocederPaso} disabled={pasoActual === 0 || estadoActual.cargando}>Anterior</button>
+        <button type="button" onClick={avanzarPaso} disabled={pasoActual === pasos.length - 1 || estadoActual.cargando}>{estadoActual.cargando ? 'Cargando...' : 'Siguiente'}</button>
       </footer>
     </main>
   );
