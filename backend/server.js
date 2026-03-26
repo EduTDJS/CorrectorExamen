@@ -119,5 +119,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Backend de CorrectorExamen escuchando en http://localhost:${PORT}`);
+  console.log(`Backend de CalificaYa escuchando en http://localhost:${PORT}`);
 });
