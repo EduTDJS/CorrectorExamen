@@ -28,6 +28,7 @@ Cada ADR debe incluir estas secciones mínimas:
 - [0003 - Persistencia en localStorage](0003-persistencia-localstorage.md)
 - [0004 - Exportación PDF/CSV en cliente](0004-exportacion-pdf-csv-en-cliente.md)
 - [0005 - Migración IA a backend y custodia de secretos](0005-migracion-ia-a-backend.md)
+- [0006 - Selección de proveedor IA por variable de entorno y contrato normalizado](0006-ai-provider-env-y-contrato-normalizado.md)
 
 ## Nota de nomenclatura
 
