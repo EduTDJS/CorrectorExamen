@@ -8,6 +8,7 @@ CalificaYa es una aplicación web para configurar, corregir y exportar resultado
 - [Modelo de datos](docs/data-model.md)
 - [Seguridad](docs/security.md)
 - [ADRs (Architecture Decision Records)](docs/adr/README.md)
+- [Roadmap de mejoras](docs/improvements-roadmap.md)
 
 ## Cómo contribuir
 
