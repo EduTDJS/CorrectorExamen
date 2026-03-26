@@ -18,28 +18,6 @@ const parseJson = (raw, fallback) => {
   }
 };
 
-const toRecord = (reportPayload, { reportId, createdAt, updatedAt }) => ({
-  id: reportId,
-  created_at: createdAt,
-  updated_at: updatedAt,
-  payload_json: JSON.stringify({
-    ...reportPayload,
-    id: reportId,
-    creadoEn: reportPayload.creadoEn || createdAt
-  })
-});
-
-const toAuditLog = ({ reportId, action, actor, metadata = {} }) => ({
-  id: createId('audit'),
-  report_id: reportId,
-  action,
-  actor,
-  created_at: nowIso(),
-  metadata_json: JSON.stringify(metadata)
-});
-
-const fromRecord = (record) => parseJson(record?.payload_json, null);
-
 const toOwnership = (ownership = {}) => {
   const tenantId = String(ownership.tenantId || '').trim();
   const userId = String(ownership.userId || '').trim();
@@ -74,36 +52,201 @@ const matchesAccessScope = (reportPayload, { tenantId, userId, enforceUserScope 
   return Boolean(userId && reportUserId && reportUserId === userId);
 };
 
-export const createReport = async (reportPayload, {
-  actor = 'sistema_backend',
+const toAuditLog = ({ reportId, action, actor, metadata = {} }) => ({
+  id: createId('audit'),
+  report_id: reportId,
+  action,
+  actor,
+  created_at: nowIso(),
+  metadata_json: JSON.stringify(metadata)
+});
+
+const stableSlug = (value, fallback = 'general') => {
+  const normalized = String(value || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return normalized || fallback;
+};
+
+const buildNormalizedRecord = (reportPayload, { reportId, createdAt, updatedAt }) => {
+  const tenantId = String(reportPayload?.ownership?.tenantId || '').trim() || 'tenant_general';
+  const schoolId = `school_${stableSlug(tenantId)}`;
+  const groupName = String(reportPayload?.examen?.grupo || 'Grupo general').trim();
+  const groupId = `group_${stableSlug(`${schoolId}_${groupName}`)}`;
+  const subject = String(reportPayload?.examen?.materia || 'Materia general').trim();
+  const examDate = String(reportPayload?.examen?.fecha || '') || null;
+  const examId = `exam_${stableSlug(`${groupId}_${subject}_${examDate || 'sin_fecha'}`)}`;
+  const enrollment = String(reportPayload?.estudiante?.matricula || '').trim() || null;
+  const studentName = String(reportPayload?.estudiante?.nombre || 'Estudiante sin nombre').trim();
+  const studentDiscriminator = enrollment || `${studentName}_${reportId}`;
+  const studentId = `student_${stableSlug(`${schoolId}_${studentDiscriminator}`)}`;
+  const submissionId = `submission_${reportId}`;
+
+  return {
+    school: {
+      id: schoolId,
+      tenantId,
+      name: tenantId,
+      createdAt,
+      updatedAt
+    },
+    group: {
+      id: groupId,
+      schoolId,
+      name: groupName,
+      examDate,
+      createdAt,
+      updatedAt
+    },
+    exam: {
+      id: examId,
+      groupId,
+      subject,
+      examDate,
+      totalQuestions: Number(reportPayload?.examen?.totalPreguntas) || 0,
+      answerKey: String(reportPayload?.examen?.claveRespuestas || ''),
+      createdAt,
+      updatedAt
+    },
+    student: {
+      id: studentId,
+      schoolId,
+      groupId,
+      name: studentName,
+      enrollment,
+      createdAt,
+      updatedAt
+    },
+    submission: {
+      id: submissionId,
+      examId,
+      studentId,
+      reportId,
+      submittedAt: String(reportPayload?.creadoEn || createdAt),
+      responsesJson: JSON.stringify(reportPayload?.respuestas || {}),
+      sourceText: String(reportPayload?.respuestas?.texto || ''),
+      ownershipJson: JSON.stringify(reportPayload?.ownership || {}),
+      createdAt,
+      updatedAt
+    },
+    grade: {
+      id: `grade_${reportId}`,
+      submissionId,
+      score: Number(reportPayload?.calificacionFinal?.notaSobre100) || 0,
+      letter: String(reportPayload?.calificacionFinal?.letra || ''),
+      teacherJustification: String(reportPayload?.calificacionFinal?.justificacionDocente || ''),
+      questionScoresJson: JSON.stringify(reportPayload?.puntuacionPorPregunta || []),
+      aiJustificationsJson: JSON.stringify(reportPayload?.justificacionesIA || []),
+      createdAt,
+      updatedAt
+    }
+  };
+};
+
+const toProjectionRecord = (reportPayload, { reportId, createdAt, updatedAt }) => ({
+  id: reportId,
+  created_at: createdAt,
+  updated_at: updatedAt,
+  payload_json: JSON.stringify({
+    ...reportPayload,
+    id: reportId,
+    creadoEn: reportPayload.creadoEn || createdAt
+  })
+});
+
+const fromStorageRow = (row) => {
+  const fallbackPayload = parseJson(row?.payload_json, null);
+
+  if (!row?.submission_id) {
+    return fallbackPayload;
+  }
+
+  const ownership = parseJson(row.ownership_json, fallbackPayload?.ownership || {});
+  const respuestas = parseJson(row.responses_json, fallbackPayload?.respuestas || {});
+  const puntuacionPorPregunta = parseJson(row.question_scores_json, fallbackPayload?.puntuacionPorPregunta || []);
+  const justificacionesIA = parseJson(row.ai_justifications_json, fallbackPayload?.justificacionesIA || []);
+
+  return {
+    ...(fallbackPayload || {}),
+    id: row.id,
+    creadoEn: fallbackPayload?.creadoEn || row.created_at,
+    ownership,
+    examen: {
+      ...(fallbackPayload?.examen || {}),
+      materia: row.exam_subject,
+      grupo: row.group_name,
+      fecha: row.exam_date,
+      totalPreguntas: row.total_questions,
+      claveRespuestas: row.answer_key
+    },
+    estudiante: {
+      ...(fallbackPayload?.estudiante || {}),
+      nombre: row.student_name,
+      matricula: row.enrollment
+    },
+    respuestas,
+    puntuacionPorPregunta,
+    justificacionesIA,
+    calificacionFinal: {
+      ...(fallbackPayload?.calificacionFinal || {}),
+      notaSobre100: Number(row.score),
+      letra: row.letter,
+      justificacionDocente: row.teacher_justification
+    }
+  };
+};
+
+const persistReport = async (reportPayload, {
+  reportId,
+  actor,
+  action,
   ownership,
-  auditMetadata = {}
-} = {}) => {
+  auditMetadata,
+  createdAt,
+  updatedAt
+}) => {
   const storage = await getReportsStorageAdapter();
-  const timestamp = nowIso();
-  const reportId = String(reportPayload.id || createId('report'));
   const ownershipMetadata = toOwnership(ownership);
   const payloadWithOwnership = ownershipMetadata
     ? { ...reportPayload, ownership: ownershipMetadata }
     : reportPayload;
 
-  const record = toRecord(payloadWithOwnership, {
-    reportId,
-    createdAt: payloadWithOwnership.creadoEn || timestamp,
-    updatedAt: timestamp
-  });
+  const projection = toProjectionRecord(payloadWithOwnership, { reportId, createdAt, updatedAt });
+  const normalized = buildNormalizedRecord(payloadWithOwnership, { reportId, createdAt, updatedAt });
 
-  await storage.createReportRecord(
-    record,
+  await storage.upsertReportGraph(
+    projection,
+    normalized,
     toAuditLog({
       reportId,
-      action: 'report_created',
+      action,
       actor,
       metadata: { source: 'api', id: reportId, ...auditMetadata }
     })
   );
 
-  return fromRecord(record);
+  return fromStorageRow({ ...projection, ...normalized.submission, ...normalized.exam, ...normalized.group, ...normalized.student, ...normalized.grade });
+};
+
+export const createReport = async (reportPayload, {
+  actor = 'sistema_backend',
+  ownership,
+  auditMetadata = {}
+} = {}) => {
+  const timestamp = nowIso();
+  const reportId = String(reportPayload.id || createId('report'));
+  return persistReport(reportPayload, {
+    reportId,
+    actor,
+    action: 'report_created',
+    ownership,
+    auditMetadata,
+    createdAt: reportPayload.creadoEn || timestamp,
+    updatedAt: timestamp
+  });
 };
 
 export const updateReport = async (reportId, reportPayload, {
@@ -117,49 +260,37 @@ export const updateReport = async (reportId, reportPayload, {
     return null;
   }
 
-  const currentPayload = fromRecord(current) || {};
-  const ownershipMetadata = toOwnership(ownership);
-  const payloadWithOwnership = ownershipMetadata
-    ? { ...reportPayload, ownership: ownershipMetadata }
-    : reportPayload;
-  const updated = toRecord(payloadWithOwnership, {
+  const currentPayload = fromStorageRow(current) || {};
+
+  return persistReport(reportPayload, {
     reportId,
+    actor,
+    action: 'report_updated',
+    ownership,
+    auditMetadata,
     createdAt: currentPayload.creadoEn || current.created_at,
     updatedAt: nowIso()
   });
-
-  const saved = await storage.updateReportRecord(
-    reportId,
-    updated,
-    toAuditLog({
-      reportId,
-      action: 'report_updated',
-      actor,
-      metadata: { source: 'api', id: reportId, ...auditMetadata }
-    })
-  );
-
-  return saved ? fromRecord(saved) : null;
 };
 
 export const getReportById = async (reportId, accessScope = {}) => {
   const storage = await getReportsStorageAdapter();
   const found = await storage.getReportRecordById(reportId);
-  const report = fromRecord(found);
+  const report = fromStorageRow(found);
   return matchesAccessScope(report, accessScope) ? report : null;
 };
 
 export const getReportByIdUnscoped = async (reportId) => {
   const storage = await getReportsStorageAdapter();
   const found = await storage.getReportRecordById(reportId);
-  return fromRecord(found);
+  return fromStorageRow(found);
 };
 
 export const listReports = async (accessScope = {}) => {
   const storage = await getReportsStorageAdapter();
   const rows = await storage.listReportRecords();
   return rows
-    .map((row) => fromRecord(row))
+    .map((row) => fromStorageRow(row))
     .filter((row) => Boolean(row) && matchesAccessScope(row, accessScope));
 };
 
