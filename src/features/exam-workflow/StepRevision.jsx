@@ -13,6 +13,9 @@ function StepRevision({ resultadoRevision, mapearLetraPucmm, sugerirCalificacion
       <button type="button" onClick={sugerirCalificacionConIA} disabled={iaEstado.cargando}>
         {iaEstado.cargando ? 'Consultando IA...' : 'Sugerir calificación con IA'}
       </button>
+      <p className="detalle">
+        Proveedor activo: <strong>{iaEstado.proveedorActivo}</strong> ({iaEstado.modeloActivo})
+      </p>
 
       {iaEstado.error && <p className="error">{iaEstado.error}</p>}
 
