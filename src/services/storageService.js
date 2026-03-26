@@ -1,4 +1,5 @@
 import { normalizarDesglosePregunta } from '../utils/questionBreakdown';
+import { buildAuthHeaders } from './sessionService';
 
 export const STORAGE_DECISION_FINAL = 'corrector_decision_final';
 export const STORAGE_REPORTES = 'corrector_historial_reportes_v1';
@@ -287,14 +288,41 @@ export const guardarReportes = (reportes) => {
   }));
 };
 
+
+class StorageServiceApiError extends Error {
+  constructor(message, { status, code } = {}) {
+    super(message);
+    this.name = 'StorageServiceApiError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
+const construirMensajeErrorApi = (status, fallback = 'No se pudo completar la operación de reportes en backend.') => {
+  if (status === 401) {
+    return 'Tu sesión expiró o es inválida. Inicia sesión nuevamente para consultar reportes.';
+  }
+
+  if (status === 403) {
+    return 'No tienes permisos suficientes para acceder a reportes.';
+  }
+
+  return fallback;
+};
+
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
 const construirUrlApi = (path) => `${API_BASE_URL}${path}`;
 
 export const listarReportesApi = async () => {
-  const response = await fetch(construirUrlApi('/api/reportes'));
+  const response = await fetch(construirUrlApi('/api/reportes'), {
+    headers: buildAuthHeaders()
+  });
+
   if (!response.ok) {
-    throw new Error('No se pudieron listar reportes en backend.');
+    throw new StorageServiceApiError(construirMensajeErrorApi(response.status, 'No se pudieron listar reportes en backend.'), {
+      status: response.status
+    });
   }
 
   const payload = await response.json();
@@ -304,15 +332,45 @@ export const listarReportesApi = async () => {
 export const guardarReporteApi = async (reporte, actor = 'frontend_tecnico') => {
   const response = await fetch(construirUrlApi('/api/reportes'), {
     method: 'POST',
-    headers: {
+    headers: buildAuthHeaders({
       'Content-Type': 'application/json',
       'x-actor': actor
-    },
+    }),
     body: JSON.stringify(reporte)
   });
 
   if (!response.ok) {
-    throw new Error('No se pudo guardar el reporte en backend.');
+    throw new StorageServiceApiError(construirMensajeErrorApi(response.status, 'No se pudo guardar el reporte en backend.'), {
+      status: response.status
+    });
+  }
+
+  return response.json();
+};
+
+export const obtenerReporteApi = async (reporteId) => {
+  const response = await fetch(construirUrlApi(`/api/reportes/${encodeURIComponent(reporteId)}`), {
+    headers: buildAuthHeaders()
+  });
+
+  if (!response.ok) {
+    throw new StorageServiceApiError(construirMensajeErrorApi(response.status, 'No se pudo obtener el reporte solicitado.'), {
+      status: response.status
+    });
+  }
+
+  return response.json();
+};
+
+export const exportarReporteApi = async (reporteId) => {
+  const response = await fetch(construirUrlApi(`/api/reportes/${encodeURIComponent(reporteId)}/export`), {
+    headers: buildAuthHeaders()
+  });
+
+  if (!response.ok) {
+    throw new StorageServiceApiError(construirMensajeErrorApi(response.status, 'No se pudo exportar el reporte solicitado.'), {
+      status: response.status
+    });
   }
 
   return response.json();

@@ -6,6 +6,7 @@ La aplicación usa un modelo **server-side** donde los secretos de proveedores (
 
 - El frontend no solicita ni almacena API keys del proveedor.
 - La UI invoca `POST /api/calificacion/sugerir` en el backend propio.
+- El cliente centraliza el token de sesión en `src/services/sessionService.js` y construye headers autenticados con `buildAuthHeaders`.
 - Los endpoints críticos del backend exigen `Authorization: Bearer <session-token>` de usuario final.
 - El backend selecciona proveedor por `AI_PROVIDER` y firma la llamada saliente con:
   - `ANTHROPIC_API_KEY` (Anthropic)
@@ -42,6 +43,14 @@ Además, para trazabilidad y control de expiración de sesión:
   - token no expirado.
 
 Si falta o es inválido, backend responde `401` con `error.code = "auth_unauthorized"`.
+
+
+### Flujo de sesión cliente → backend
+
+1. El frontend obtiene/actualiza el token de sesión desde una única fuente (`sessionService`).
+2. `buildAuthHeaders` adjunta `Authorization: Bearer <token>` para llamadas críticas: `POST /api/calificacion/sugerir`, `GET/POST /api/reportes`, `GET /api/reportes/:id` y `GET /api/reportes/:id/export`.
+3. Si backend responde `401`, la UI muestra mensaje explícito de sesión expirada/inválida.
+4. Si backend responde `403`, la UI muestra mensaje explícito de permiso insuficiente según RBAC.
 
 ## RBAC por acción
 

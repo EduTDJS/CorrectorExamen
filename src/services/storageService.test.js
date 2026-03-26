@@ -3,13 +3,20 @@ import {
   STORAGE_REPORTES,
   guardarDecisionFinal,
   guardarReportes,
+  guardarReporteApi,
   leerDecisionFinal,
-  leerReportes
+  leerReportes,
+  listarReportesApi,
+  obtenerReporteApi,
+  exportarReporteApi
 } from './storageService';
+import { limpiarSesion, establecerTokenSesion } from './sessionService';
 
 describe('storageService', () => {
   beforeEach(() => {
     window.localStorage.clear();
+    limpiarSesion();
+    vi.restoreAllMocks();
   });
 
   describe('leerDecisionFinal', () => {
@@ -170,4 +177,41 @@ describe('storageService', () => {
       });
     });
   });
+
+  describe('api auth headers', () => {
+    it('adjunta Authorization en GET/POST de reportes cuando existe sesión', async () => {
+      establecerTokenSesion('token-sesion-123');
+      const fetchMock = vi.spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce({ ok: true, json: vi.fn().mockResolvedValue({ data: [] }) })
+        .mockResolvedValueOnce({ ok: true, json: vi.fn().mockResolvedValue({ id: 'r-1' }) })
+        .mockResolvedValueOnce({ ok: true, json: vi.fn().mockResolvedValue({ data: { id: 'r-1' } }) })
+        .mockResolvedValueOnce({ ok: true, json: vi.fn().mockResolvedValue({ data: { downloadUrl: '/tmp/report.csv' } }) });
+
+      await listarReportesApi();
+      await guardarReporteApi({ id: 'r-1' });
+      await obtenerReporteApi('r-1');
+      await exportarReporteApi('r-1');
+
+      expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/reportes', expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer token-sesion-123' })
+      }));
+
+      expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/reportes', expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer token-sesion-123',
+          'Content-Type': 'application/json'
+        })
+      }));
+
+      expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/reportes/r-1', expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer token-sesion-123' })
+      }));
+
+      expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/reportes/r-1/export', expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer token-sesion-123' })
+      }));
+    });
+  });
+
 });
