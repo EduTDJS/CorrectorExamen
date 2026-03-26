@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 5 * * *"
 
 jobs:
   lint:
@@ -59,3 +62,23 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  restore-drill:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install
+      - name: Ejecutar restore drill
+        run: npm run db:restore:drill
+      - name: Upload restore drill evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: restore-drill-evidence
+          path: artifacts/restore-drill/**
+          retention-days: 30
