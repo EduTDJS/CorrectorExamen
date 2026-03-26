@@ -2,7 +2,12 @@
 
 ## Objetivo del sistema
 
-CorrectorExamen permite **configurar, corregir y reportar exámenes de selección múltiple** con soporte de OCR e IA para sugerencia docente.
+CalificaYa permite **configurar, corregir y reportar exámenes de selección múltiple** con soporte de OCR e IA para sugerencia docente.
+
+## Nomenclatura del producto
+
+- La marca visible del producto en UI y documentación es **CalificaYa**.
+- Referencias históricas a **CorrectorExamen** pueden aparecer en ADR antiguos o artefactos previos; no implican un cambio de arquitectura ni de contrato técnico.
 
 ## Diagrama lógico de módulos
 
@@ -38,7 +43,6 @@ CorrectorExamen permite **configurar, corregir y reportar exámenes de selecció
 │ Variables: ANTHROPIC_API_KEY, ANTHROPIC_MODEL, PORT                       │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
-
 
 ## Flujo de datos OCR enriquecido
 

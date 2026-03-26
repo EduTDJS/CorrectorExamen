@@ -1,4 +1,4 @@
-# Contribuir a CorrectorExamen
+# Contribuir a CalificaYa
 
 Gracias por contribuir. Este documento define el flujo mínimo para mantener consistencia técnica y documental.
 

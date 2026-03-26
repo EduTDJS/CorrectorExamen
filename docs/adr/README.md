@@ -29,3 +29,6 @@ Cada ADR debe incluir estas secciones mínimas:
 - [0004 - Exportación PDF/CSV en cliente](0004-exportacion-pdf-csv-en-cliente.md)
 - [0005 - Migración IA a backend y custodia de secretos](0005-migracion-ia-a-backend.md)
 
+## Nota de nomenclatura
+
+Desde marzo de 2026, la marca activa del producto es **CalificaYa**. ADRs históricos pueden conservar el nombre previo **CorrectorExamen** cuando describen decisiones de su momento.

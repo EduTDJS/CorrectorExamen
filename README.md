@@ -1,6 +1,6 @@
-# CorrectorExamen
+# CalificaYa
 
-Aplicación web para configurar, corregir y exportar resultados de exámenes, con OCR y sugerencia de calificación asistida por IA.
+CalificaYa es una aplicación web para configurar, corregir y exportar resultados de exámenes, con OCR y sugerencia de calificación asistida por IA.
 
 ## Arquitectura
 
