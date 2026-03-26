@@ -67,10 +67,11 @@ const validateIdentityPayload = (payload) => {
   const userId = String(payload?.sub || '').trim();
   const role = String(payload?.role || '').trim();
   const institution = String(payload?.institution || '').trim();
+  const tenantId = String(payload?.tenantId || institution || '').trim();
   const sessionId = String(payload?.sessionId || '').trim();
   const exp = Number(payload?.exp);
 
-  if (!userId || !role || !institution || !sessionId || !Number.isFinite(exp)) {
+  if (!userId || !role || !institution || !sessionId || !tenantId || !Number.isFinite(exp)) {
     throw new AuthError('Token de sesión inválido: identidad incompleta.');
   }
 
@@ -83,6 +84,7 @@ const validateIdentityPayload = (payload) => {
     userId,
     role,
     institution,
+    tenantId,
     sessionId,
     tokenVersion: 'v1',
     exp
