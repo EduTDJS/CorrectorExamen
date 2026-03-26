@@ -110,6 +110,25 @@ Este documento resume mejoras de alto impacto para evolucionar **CalificaYa** de
 - **Métrica técnica**: cobertura mínima de pruebas ≥ 80% en módulos críticos y tasa de builds exitosos en rama principal ≥ 95% por mes.
 - **Evidencia esperada**: pipeline CI con quality gates visibles, reportes de cobertura/publicación de artefactos y ADR de estrategia de testing y release.
 
+## Impacto documental esperado (por iniciativa de arquitectura)
+
+Este apartado define el **mínimo documental** que debe actualizarse junto con cada iniciativa arquitectónica para mantener trazabilidad técnica y reducir deuda de documentación.
+
+| Iniciativa de arquitectura | Documentos mínimos a actualizar |
+| --- | --- |
+| Seguridad y gobierno (RBAC, secretos, auditoría) | `docs/security.md`, `docs/architecture.md`, ADR en `docs/adr/` para decisiones de control de acceso y/o gestión de secretos. |
+| Persistencia y escalabilidad (migración a BD, versionado, backups) | `docs/data-model.md`, `docs/architecture.md`, `docs/observability.md` (métricas de BD/backup), ADR en `docs/adr/` para elección o migración de persistencia. |
+| Calidad de evaluación (rúbricas, consistencia IA, calibración OCR) | `docs/architecture.md`, `docs/observability.md` (KPIs de OCR/calidad), ADR en `docs/adr/` si cambia la estrategia de evaluación automatizada. |
+| Operación y confiabilidad (rate limiting, circuit breaker, fallback) | `docs/observability.md`, `docs/security.md`, `docs/architecture.md`, ADR en `docs/adr/` para políticas de resiliencia y límites por tenant/usuario. |
+| Pruebas y entrega continua (E2E, contratos, quality gates) | `docs/architecture.md`, `docs/observability.md` (SLO/SLI y calidad de entrega), ADR en `docs/adr/` para estrategia de testing/release. |
+
+### Regla editorial obligatoria
+
+Todo cambio de decisión técnica (por ejemplo, migración de persistencia o modificación del modelo de seguridad) **requiere**:
+
+1. ADR nuevo en `docs/adr/`, **o**
+2. actualización explícita de un ADR existente, indicando motivo, alcance y fecha del cambio.
+
 ## Primer sprint recomendado (2 semanas)
 
 ### Secuencia por dependencias
@@ -143,3 +162,11 @@ Este documento resume mejoras de alto impacto para evolucionar **CalificaYa** de
 - > 95% de solicitudes exitosas al endpoint de sugerencia.
 - Reducción de retrabajo docente en revisión manual.
 - Trazabilidad completa para cambios de calificación final.
+
+## Checklist de consistencia documental (previo al cierre de épica)
+
+- [ ] Se actualizaron `docs/architecture.md`, `docs/data-model.md`, `docs/security.md` y/o `docs/observability.md` según el impacto real de la épica.
+- [ ] Se creó o actualizó ADR en `docs/adr/` cuando hubo cambio de decisión técnica.
+- [ ] Los criterios de aceptación y métricas de la épica coinciden con los documentos técnicos actualizados.
+- [ ] Se reflejaron dependencias, supuestos y riesgos nuevos en la documentación correspondiente.
+- [ ] La evidencia (tests, dashboards, migraciones, runbooks) referenciada en la épica existe y está enlazada desde los documentos.
