@@ -1,0 +1,66 @@
+import { useEffect, useMemo, useState } from 'react';
+import { guardarReportes, leerReportes, normalizarNombreMateria } from '../services/storageService';
+
+export const agruparReportesPorMateria = (reportes) => {
+  const mapa = new Map();
+
+  (Array.isArray(reportes) ? reportes : []).forEach((reporte) => {
+    const materiaVisible = reporte.examen.materia || 'Sin materia';
+    const materiaNormalizada = reporte.organizacion?.materiaNormalizada || normalizarNombreMateria(materiaVisible);
+    const materiaFolderId = reporte.organizacion?.materiaFolderId || `materia:${materiaNormalizada || 'sin-definir'}`;
+
+    if (!mapa.has(materiaFolderId)) {
+      mapa.set(materiaFolderId, {
+        materiaFolderId,
+        materia: materiaVisible,
+        materiaNormalizada,
+        totalReportes: 0,
+        reportes: []
+      });
+    }
+
+    const carpeta = mapa.get(materiaFolderId);
+    carpeta.reportes.push(reporte);
+    carpeta.totalReportes += 1;
+  });
+
+  return Array.from(mapa.values())
+    .map((carpeta) => ({
+      ...carpeta,
+      reportes: carpeta.reportes.sort((a, b) => b.creadoEn.localeCompare(a.creadoEn))
+    }))
+    .sort((a, b) => a.materia.localeCompare(b.materia, 'es', { sensitivity: 'base' }));
+};
+
+export const useReportes = () => {
+  const [reportes, setReportes] = useState(() => leerReportes());
+  const [filtrosHistorial, setFiltrosHistorial] = useState({ materia: '', grupo: '', fecha: '' });
+
+  useEffect(() => {
+    guardarReportes(reportes);
+  }, [reportes]);
+
+  const reportesFiltrados = useMemo(() => reportes.filter((reporte) => {
+    const filtroMateriaNormalizada = normalizarNombreMateria(filtrosHistorial.materia);
+    const materiaReporteNormalizada = reporte.organizacion?.materiaNormalizada
+      || normalizarNombreMateria(reporte.examen.materia);
+    const materiaValida = !filtroMateriaNormalizada || materiaReporteNormalizada.includes(filtroMateriaNormalizada);
+    const grupoValido = !filtrosHistorial.grupo || reporte.examen.grupo === filtrosHistorial.grupo;
+    const fechaValida = !filtrosHistorial.fecha || reporte.examen.fecha === filtrosHistorial.fecha;
+    return materiaValida && grupoValido && fechaValida;
+  }), [reportes, filtrosHistorial]);
+
+  const reportesAgrupadosPorMateria = useMemo(
+    () => agruparReportesPorMateria(reportesFiltrados),
+    [reportesFiltrados]
+  );
+
+  return {
+    reportes,
+    setReportes,
+    filtrosHistorial,
+    setFiltrosHistorial,
+    reportesFiltrados,
+    reportesAgrupadosPorMateria
+  };
+};
