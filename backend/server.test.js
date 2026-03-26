@@ -62,13 +62,14 @@ const loadServer = async ({
   };
 };
 
-const apiRequest = ({ baseUrl, path, method = 'GET', body, token = 'test-internal-token' }) => new Promise((resolve, reject) => {
+const apiRequest = ({ baseUrl, path, method = 'GET', body, token = 'test-internal-token', headers = {} }) => new Promise((resolve, reject) => {
   const url = new URL(path, baseUrl);
   const req = http.request(url, {
     method,
     headers: {
       'content-type': 'application/json',
-      'x-internal-token': token
+      'x-internal-token': token,
+      ...headers
     }
   }, (res) => {
     let raw = '';
@@ -78,6 +79,7 @@ const apiRequest = ({ baseUrl, path, method = 'GET', body, token = 'test-interna
     res.on('end', () => {
       resolve({
         status: res.statusCode,
+        headers: res.headers,
         json: raw ? JSON.parse(raw) : {}
       });
     });
@@ -286,6 +288,82 @@ describe('backend/server API', () => {
 
       expect(result.status).toBe(400);
       expect(result.json.error.code).toBe('payload_validation_error');
+      expect(typeof result.json.error.requestId).toBe('string');
+      expect(result.headers['x-request-id']).toBe(result.json.error.requestId);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('respeta X-Request-Id del cliente en respuestas de error', async () => {
+    const app = await loadServer({ provider: 'openai' });
+
+    try {
+      const result = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/calificacion/sugerir',
+        method: 'POST',
+        token: 'token-invalido',
+        headers: {
+          'x-request-id': 'req-cliente-123'
+        },
+        body: basePayload
+      });
+
+      expect(result.status).toBe(401);
+      expect(result.json.error.code).toBe('internal_auth_unauthorized');
+      expect(result.json.error.requestId).toBe('req-cliente-123');
+      expect(result.headers['x-request-id']).toBe('req-cliente-123');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('emite logs JSON sin datos sensibles y con eventos clave', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        choices: [
+          {
+            message: {
+              content: '{"puntuacion_sugerida": 88, "justificacion_breve": "Buen análisis."}'
+            }
+          }
+        ]
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    const app = await loadServer({ provider: 'openai' });
+
+    try {
+      const result = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/calificacion/sugerir',
+        method: 'POST',
+        body: basePayload
+      });
+
+      expect(result.status).toBe(200);
+      const logs = stdoutSpy.mock.calls
+        .map(([line]) => line)
+        .filter((line) => typeof line === 'string' && line.trim().startsWith('{'))
+        .map((line) => JSON.parse(line.trim()));
+
+      expect(logs.some((entry) => entry.event === 'request_started')).toBe(true);
+      const providerLog = logs.find((entry) => entry.event === 'provider_selected');
+      expect(providerLog).toBeDefined();
+      expect(providerLog.provider).toBe('openai');
+      expect(providerLog.payloadMetadata).toMatchObject({
+        hasDatos: true,
+        hasPuntaje: true
+      });
+      expect(providerLog.payloadMetadata).not.toHaveProperty('datos');
+
+      const completionLog = logs.find((entry) => entry.event === 'request_completed');
+      expect(completionLog).toBeDefined();
+      expect(completionLog.status).toBe(200);
+      expect(typeof completionLog.durationMs).toBe('number');
     } finally {
       await app.close();
     }
