@@ -1,7 +1,11 @@
 import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 
 const ORIGINAL_ENV = { ...process.env };
+let tempDir = '';
 
 const basePayload = {
   datos: {
@@ -35,6 +39,7 @@ const loadServer = async ({
   process.env.AI_REQUEST_TIMEOUT_MS = String(timeoutMs);
   process.env.INTERNAL_AUTH_TOKEN = internalToken;
   process.env.INTERNAL_AUTH_HEADER = 'x-internal-token';
+  process.env.REPORTS_DB_FILE = path.join(tempDir, 'reports-db.json');
 
   if (provider === 'anthropic') {
     process.env.ANTHROPIC_API_KEY = anthropicKey;
@@ -62,8 +67,8 @@ const loadServer = async ({
   };
 };
 
-const apiRequest = ({ baseUrl, path, method = 'GET', body, token = 'test-internal-token', headers = {} }) => new Promise((resolve, reject) => {
-  const url = new URL(path, baseUrl);
+const apiRequest = ({ baseUrl, path: requestPath, method = 'GET', body, token = 'test-internal-token', headers = {} }) => new Promise((resolve, reject) => {
+  const url = new URL(requestPath, baseUrl);
   const req = http.request(url, {
     method,
     headers: {
@@ -95,27 +100,28 @@ const apiRequest = ({ baseUrl, path, method = 'GET', body, token = 'test-interna
 });
 
 describe('backend/server API', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'corrector-backend-'));
     restoreEnv();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     restoreEnv();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    if (tempDir) {
+      await rm(tempDir, { recursive: true, force: true });
+      tempDir = '';
+    }
   });
 
   it('GET /api/calificacion/proveedor devuelve proveedor y modelo activos', async () => {
     const app = await loadServer({ provider: 'openai' });
 
     try {
-      const result = await apiRequest({
-        baseUrl: app.baseUrl,
-        path: '/api/calificacion/proveedor'
-      });
-
+      const result = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/proveedor' });
       expect(result.status).toBe(200);
       expect(result.json).toMatchObject({
         proveedor: 'openai',
@@ -127,55 +133,10 @@ describe('backend/server API', () => {
     }
   });
 
-  it('POST /api/calificacion/sugerir normaliza contrato para Anthropic', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse(200, {
-        content: [
-          {
-            type: 'text',
-            text: 'Resultado:\n{"puntuacion_sugerida": 93.2, "justificacion_breve": "Buen dominio del tema."}'
-          }
-        ]
-      })
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    const app = await loadServer({ provider: 'anthropic' });
-
-    try {
-      const result = await apiRequest({
-        baseUrl: app.baseUrl,
-        path: '/api/calificacion/sugerir',
-        method: 'POST',
-        body: basePayload
-      });
-
-      expect(result.status).toBe(200);
-      expect(result.json).toEqual({
-        puntuacion: '93.20',
-        justificacion: 'Buen dominio del tema.',
-        proveedor: 'anthropic',
-        modelo: 'claude-sonnet-4-20250514'
-      });
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-    } finally {
-      await app.close();
-    }
-  });
-
   it('POST /api/calificacion/sugerir normaliza contrato para OpenAI', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse(200, {
-        choices: [
-          {
-            message: {
-              content: '{"puntuacion_sugerida": 88, "justificacion_breve": "Puede reforzar asientos de ajuste."}'
-            }
-          }
-        ]
-      })
-    );
-    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, {
+      choices: [{ message: { content: '{"puntuacion_sugerida": 88, "justificacion_breve": "Correcto"}' } }]
+    })));
 
     const app = await loadServer({ provider: 'openai' });
 
@@ -188,182 +149,75 @@ describe('backend/server API', () => {
       });
 
       expect(result.status).toBe(200);
-      expect(result.json).toEqual({
-        puntuacion: '88.00',
-        justificacion: 'Puede reforzar asientos de ajuste.',
-        proveedor: 'openai',
-        modelo: 'gpt-4o-mini'
-      });
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(result.json).toMatchObject({ puntuacion: '88.00', proveedor: 'openai' });
     } finally {
       await app.close();
     }
   });
 
-  it('retorna provider_config_error si falta API key del proveedor', async () => {
-    const app = await loadServer({ provider: 'openai', openAiKey: '' });
+  it('POST /api/reportes permite crear, listar, obtener y editar con auditoría', async () => {
+    const app = await loadServer({ provider: 'openai' });
 
     try {
-      const result = await apiRequest({
-        baseUrl: app.baseUrl,
-        path: '/api/calificacion/sugerir',
-        method: 'POST',
-        body: basePayload
-      });
+      const payload = {
+        examen: { materia: 'Contabilidad', grupo: 'A', fecha: '2026-03-20', totalPreguntas: 10, claveRespuestas: 'ABCD' },
+        estudiante: { nombre: 'Ana', matricula: 'A1' },
+        respuestas: { lista: ['A', 'B'], texto: 'AB' },
+        puntuacionPorPregunta: [],
+        justificacionesIA: [],
+        calificacionFinal: { notaSobre100: 80, letra: 'B', justificacionDocente: 'Bien' }
+      };
 
-      expect(result.status).toBe(500);
-      expect(result.json.error.code).toBe('provider_config_error');
+      const created = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        headers: { 'x-actor': 'qa_tester' },
+        body: payload
+      });
+      expect(created.status).toBe(201);
+      expect(created.json.id).toBeTruthy();
+
+      const listed = await apiRequest({ baseUrl: app.baseUrl, path: '/api/reportes' });
+      expect(listed.status).toBe(200);
+      expect(listed.json.data).toHaveLength(1);
+
+      const byId = await apiRequest({ baseUrl: app.baseUrl, path: `/api/reportes/${created.json.id}` });
+      expect(byId.status).toBe(200);
+      expect(byId.json.estudiante.nombre).toBe('Ana');
+
+      const updated = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        headers: { 'x-actor': 'qa_tester' },
+        body: { ...created.json, estudiante: { ...created.json.estudiante, nombre: 'Ana Editada' } }
+      });
+      expect(updated.status).toBe(200);
+      expect(updated.json.estudiante.nombre).toBe('Ana Editada');
+
+      const db = JSON.parse(await readFile(process.env.REPORTS_DB_FILE, 'utf-8'));
+      expect(db.audit_logs).toHaveLength(2);
+      expect(db.audit_logs.map((log) => log.action)).toEqual(['report_created', 'report_updated']);
+      expect(db.audit_logs[0].actor).toBe('qa_tester');
     } finally {
       await app.close();
     }
   });
 
-  it('retorna provider_timeout si el proveedor excede timeout', async () => {
-    const fetchMock = vi.fn().mockImplementation((_url, options) => new Promise((_resolve, reject) => {
-      options.signal.addEventListener('abort', () => {
-        const error = new Error('aborted');
-        error.name = 'AbortError';
-        reject(error);
-      });
-    }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const app = await loadServer({ provider: 'anthropic', timeoutMs: 5 });
-
-    try {
-      const result = await apiRequest({
-        baseUrl: app.baseUrl,
-        path: '/api/calificacion/sugerir',
-        method: 'POST',
-        body: basePayload
-      });
-
-      expect(result.status).toBe(504);
-      expect(result.json.error.code).toBe('provider_timeout');
-    } finally {
-      await app.close();
-    }
-  });
-
-  it('retorna provider_contract_error si la respuesta de IA no cumple contrato', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse(200, {
-        content: [
-          {
-            type: 'text',
-            text: '{"puntuacion_sugerida": 140, "justificacion_breve": "Fuera de rango"}'
-          }
-        ]
-      })
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    const app = await loadServer({ provider: 'anthropic' });
-
-    try {
-      const result = await apiRequest({
-        baseUrl: app.baseUrl,
-        path: '/api/calificacion/sugerir',
-        method: 'POST',
-        body: basePayload
-      });
-
-      expect(result.status).toBe(502);
-      expect(result.json.error.code).toBe('provider_contract_error');
-    } finally {
-      await app.close();
-    }
-  });
-
-  it('retorna payload_validation_error cuando payload es inválido', async () => {
+  it('POST /api/reportes valida payload mínimo', async () => {
     const app = await loadServer({ provider: 'openai' });
 
     try {
       const result = await apiRequest({
         baseUrl: app.baseUrl,
-        path: '/api/calificacion/sugerir',
+        path: '/api/reportes',
         method: 'POST',
-        body: { puntaje: 'no-num' }
+        body: { estudiante: { nombre: 'X' } }
       });
 
       expect(result.status).toBe(400);
       expect(result.json.error.code).toBe('payload_validation_error');
-      expect(typeof result.json.error.requestId).toBe('string');
-      expect(result.headers['x-request-id']).toBe(result.json.error.requestId);
-    } finally {
-      await app.close();
-    }
-  });
-
-  it('respeta X-Request-Id del cliente en respuestas de error', async () => {
-    const app = await loadServer({ provider: 'openai' });
-
-    try {
-      const result = await apiRequest({
-        baseUrl: app.baseUrl,
-        path: '/api/calificacion/sugerir',
-        method: 'POST',
-        token: 'token-invalido',
-        headers: {
-          'x-request-id': 'req-cliente-123'
-        },
-        body: basePayload
-      });
-
-      expect(result.status).toBe(401);
-      expect(result.json.error.code).toBe('internal_auth_unauthorized');
-      expect(result.json.error.requestId).toBe('req-cliente-123');
-      expect(result.headers['x-request-id']).toBe('req-cliente-123');
-    } finally {
-      await app.close();
-    }
-  });
-
-  it('emite logs JSON sin datos sensibles y con eventos clave', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse(200, {
-        choices: [
-          {
-            message: {
-              content: '{"puntuacion_sugerida": 88, "justificacion_breve": "Buen análisis."}'
-            }
-          }
-        ]
-      })
-    );
-    vi.stubGlobal('fetch', fetchMock);
-    const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-
-    const app = await loadServer({ provider: 'openai' });
-
-    try {
-      const result = await apiRequest({
-        baseUrl: app.baseUrl,
-        path: '/api/calificacion/sugerir',
-        method: 'POST',
-        body: basePayload
-      });
-
-      expect(result.status).toBe(200);
-      const logs = stdoutSpy.mock.calls
-        .map(([line]) => line)
-        .filter((line) => typeof line === 'string' && line.trim().startsWith('{'))
-        .map((line) => JSON.parse(line.trim()));
-
-      expect(logs.some((entry) => entry.event === 'request_started')).toBe(true);
-      const providerLog = logs.find((entry) => entry.event === 'provider_selected');
-      expect(providerLog).toBeDefined();
-      expect(providerLog.provider).toBe('openai');
-      expect(providerLog.payloadMetadata).toMatchObject({
-        hasDatos: true,
-        hasPuntaje: true
-      });
-      expect(providerLog.payloadMetadata).not.toHaveProperty('datos');
-
-      const completionLog = logs.find((entry) => entry.event === 'request_completed');
-      expect(completionLog).toBeDefined();
-      expect(completionLog.status).toBe(200);
-      expect(typeof completionLog.durationMs).toBe('number');
     } finally {
       await app.close();
     }

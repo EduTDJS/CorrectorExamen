@@ -55,7 +55,7 @@ function App() {
   const { pasoActual, estadoActual, avanzarPaso, retrocederPaso } = useExamWorkflow(pasos);
   const {
     reportes,
-    setReportes,
+    guardarReporte: guardarReportePersistente,
     filtrosHistorial,
     setFiltrosHistorial,
     reportesFiltrados,
@@ -287,18 +287,13 @@ function App() {
     }
   });
 
-  const guardarReporte = () => {
+  const guardarReporte = async () => {
     if (!validarPaso(3)) return;
 
     const reporteGuardadoPrevio = reporteActualRef.id ? reportes.find((rep) => rep.id === reporteActualRef.id) : null;
     const reporte = generarReporteActual({ id: reporteGuardadoPrevio?.id, creadoEn: reporteGuardadoPrevio?.creadoEn });
-
-    setReportes((previo) => {
-      if (!reporteGuardadoPrevio) return [reporte, ...previo];
-      return previo.map((item) => (item.id === reporte.id ? reporte : item));
-    });
-
-    setReporteActualRef({ id: reporte.id, firma: firmaReporteActual });
+    const guardado = await guardarReportePersistente(reporte);
+    setReporteActualRef({ id: guardado.id, firma: firmaReporteActual });
   };
 
   const exportarReporteActual = (tipo) => {

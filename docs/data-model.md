@@ -125,9 +125,9 @@ La decisión final se guarda en `corrector_decision_final` con versión de esque
 - `schemaVersion: 1` corresponde al formato legacy sin envoltura (`{ puntuacion, justificacion }`).
 - La lectura valida tipos y restaura valores por defecto cuando no se puede migrar.
 
-## Entidad de historial (`reporte` persistido)
+## Entidad de historial (`reporte` persistido en backend)
 
-El historial se persiste bajo `corrector_historial_reportes_v1` con envoltura versionada.
+La persistencia primaria ocurre en backend con la tabla lógica `reports` (campo `payload_json`), y fallback local opcional en `corrector_historial_reportes_v1` durante la migración gradual.
 
 ```json
 {
@@ -155,12 +155,36 @@ El historial se persiste bajo `corrector_historial_reportes_v1` con envoltura ve
 }
 ```
 
-Compatibilidad y resiliencia:
+Compatibilidad y resiliencia (fallback local):
 
 - `schemaVersion: 1`: arreglo legacy sin envoltura (se migra automáticamente a v2).
 - `schemaVersion: 2`: envoltura versionada sin `organizacion` (se migra automáticamente a v3 reconstruyendo carpetas por materia normalizada).
 - `schemaVersion: 3`: reportes previos sin `desglose` explícito por pregunta (se migra automáticamente a v4 normalizando el contrato).
 - Los registros corruptos o incompletos se aíslan durante la lectura: se reparan cuando es posible o se descartan.
+
+## Tabla lógica `reports` (backend)
+
+```json
+{
+  "id": "string",
+  "created_at": "ISO-8601",
+  "updated_at": "ISO-8601",
+  "payload_json": "{...reporte serializado...}"
+}
+```
+
+## Tabla lógica `audit_logs` (backend)
+
+```json
+{
+  "id": "string",
+  "report_id": "string",
+  "action": "report_created | report_updated",
+  "actor": "string",
+  "created_at": "ISO-8601",
+  "metadata_json": "{...}"
+}
+```
 
 ## Relación entre entidades
 

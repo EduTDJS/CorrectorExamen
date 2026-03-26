@@ -286,3 +286,34 @@ export const guardarReportes = (reportes) => {
     data
   }));
 };
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+
+const construirUrlApi = (path) => `${API_BASE_URL}${path}`;
+
+export const listarReportesApi = async () => {
+  const response = await fetch(construirUrlApi('/api/reportes'));
+  if (!response.ok) {
+    throw new Error('No se pudieron listar reportes en backend.');
+  }
+
+  const payload = await response.json();
+  return Array.isArray(payload?.data) ? payload.data : [];
+};
+
+export const guardarReporteApi = async (reporte, actor = 'frontend_tecnico') => {
+  const response = await fetch(construirUrlApi('/api/reportes'), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-actor': actor
+    },
+    body: JSON.stringify(reporte)
+  });
+
+  if (!response.ok) {
+    throw new Error('No se pudo guardar el reporte en backend.');
+  }
+
+  return response.json();
+};
