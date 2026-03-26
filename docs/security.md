@@ -11,7 +11,7 @@ La aplicación usa un modelo **server-side** donde los secretos de proveedores (
   - `ANTHROPIC_API_KEY` (Anthropic)
   - `OPENAI_API_KEY` (OpenAI)
 - El endpoint `POST /api/calificacion/sugerir` exige token interno en header (`X-Internal-Token` por defecto).
-- El backend aplica rate limiting configurable por ventana y límite máximo.
+- El backend aplica rate limiting configurable por ventana, límite base y límites por rol (`docente`, `coordinador`, `admin`).
 - El backend expone `GET /api/calificacion/proveedor` sin secretos, solo metadatos operativos (proveedor/modelo/timeout).
 - El backend aplica RBAC por acción para crear examen, corregir, exportar y ver histórico.
 
@@ -22,6 +22,7 @@ La identidad mínima de usuario en backend queda definida por:
 - `userId` (`sub` en token)
 - `role`
 - `institution`
+- `tenantId` (si no viene explícito en token, se deriva temporalmente desde `institution`)
 
 Además, para trazabilidad y control de expiración de sesión:
 
@@ -34,7 +35,7 @@ Además, para trazabilidad y control de expiración de sesión:
 - Formato: `v1.<payload_base64url>.<signature_base64url>`.
 - Firma: `HMAC-SHA256("v1.<payload_base64url>", SESSION_TOKEN_SECRET)`.
 - Payload requerido:
-  - `sub`, `role`, `institution`, `sessionId`, `exp`.
+  - `sub`, `role`, `institution`, `tenantId`, `sessionId`, `exp` (`tenantId` puede omitirse temporalmente y derivarse desde `institution`).
 - Validaciones mínimas:
   - firma válida,
   - campos obligatorios presentes,
@@ -55,6 +56,7 @@ Matriz de permisos inicial:
 
 - `admin`: todas las acciones.
 - `docente`: todas las acciones.
+- `coordinador`: todas las acciones.
 - `corrector`: `correct_exam`, `view_history`.
 - `auditor`: `export_report`, `view_history`.
 
@@ -116,11 +118,13 @@ Ambos incluyen:
   4. Revocar el token anterior y verificar ausencia de tráfico con credencial vieja.
 - **Límites recomendados (punto de partida):**
   - `RATE_LIMIT_WINDOW_MS=60000` (1 minuto).
-  - `RATE_LIMIT_MAX_REQUESTS=20` por token/IP para entornos internos pequeños.
-  - Si hay alta concurrencia legítima, subir gradualmente en pasos de 10 y observar tasa de `429`.
+  - `RATE_LIMIT_MAX_REQUESTS=20` como límite base para roles no explícitos.
+  - `RATE_LIMIT_MAX_REQUESTS_DOCENTE=20`, `RATE_LIMIT_MAX_REQUESTS_COORDINADOR=30`, `RATE_LIMIT_MAX_REQUESTS_ADMIN=40`.
+  - Si hay alta concurrencia legítima, subir gradualmente en pasos de 10 y observar tasa de `429` y `rate_limit_saturation`.
 - **Estrategia de clave de rate limit (`RATE_LIMIT_KEY_STRATEGY`):**
-  - `token_or_ip` (recomendado): usa token cuando existe, si no cae a IP.
-  - `token`: útil cuando todos los consumidores internos siempre envían token.
+  - `authenticated_or_token_or_ip` (recomendado): usa `tenantId + userId`; sin identidad, cae temporalmente a token interno o IP.
+  - `authenticated`: intenta usar solo identidad autenticada (`tenantId + userId` o `tenantId:anonymous`).
+  - `token`: útil cuando consumidores internos usan token compartido y todavía no hay identidad de usuario.
   - `ip`: útil detrás de redes internas con IPs estables y tokens compartidos.
 - **Códigos de error consistentes del endpoint:**
   - `401` → `error.code = "internal_auth_unauthorized"`
@@ -138,5 +142,9 @@ Ambos incluyen:
 - `INTERNAL_AUTH_HEADER` (opcional, default `x-internal-token`)
 - `RATE_LIMIT_WINDOW_MS` (opcional, default `60000`)
 - `RATE_LIMIT_MAX_REQUESTS` (opcional, default `20`)
-- `RATE_LIMIT_KEY_STRATEGY` (opcional, default `token_or_ip`; valores: `token`, `ip`, `token_or_ip`)
+- `RATE_LIMIT_MAX_REQUESTS_DOCENTE` (opcional, default `20`)
+- `RATE_LIMIT_MAX_REQUESTS_COORDINADOR` (opcional, default `30`)
+- `RATE_LIMIT_MAX_REQUESTS_ADMIN` (opcional, default `40`)
+- `RATE_LIMIT_NEAR_THRESHOLD_RATIO` (opcional, default `0.8`)
+- `RATE_LIMIT_KEY_STRATEGY` (opcional, default `authenticated_or_token_or_ip`; valores: `authenticated_or_token_or_ip`, `authenticated`, `token`, `ip`)
 - `PORT` (opcional, default `8787`)

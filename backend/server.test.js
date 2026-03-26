@@ -32,11 +32,12 @@ const buildSessionToken = ({
   sub = 'u-docente-1',
   role = 'docente',
   institution = 'Instituto Central',
+  tenantId = institution,
   sessionId = 'session-123',
   exp = Math.floor(Date.now() / 1000) + 60 * 60,
   secret = 'session-secret-test'
 } = {}) => {
-  const payload = { sub, role, institution, sessionId, exp };
+  const payload = { sub, role, institution, tenantId, sessionId, exp };
   const payloadEncoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
   const signedContent = `v1.${payloadEncoded}`;
   const signature = crypto.createHmac('sha256', secret).update(signedContent).digest('base64url');
@@ -53,7 +54,13 @@ const loadServer = async ({
   internalToken = 'test-internal-token',
   sessionSecret = 'session-secret-test',
   anthropicKey = 'anthropic-key',
-  openAiKey = 'openai-key'
+  openAiKey = 'openai-key',
+  rateLimitWindowMs = 60000,
+  rateLimitMaxRequests = 20,
+  rateLimitMaxRequestsDocente = 20,
+  rateLimitMaxRequestsCoordinador = 30,
+  rateLimitMaxRequestsAdmin = 40,
+  rateLimitNearThresholdRatio = 0.8
 } = {}) => {
   process.env.NODE_ENV = 'test';
   process.env.AI_PROVIDER = provider;
@@ -66,6 +73,13 @@ const loadServer = async ({
   process.env.AI_REQUEST_TIMEOUT_MS = String(timeoutMs);
   process.env.INTERNAL_AUTH_TOKEN = internalToken;
   process.env.INTERNAL_AUTH_HEADER = 'x-internal-token';
+
+  process.env.RATE_LIMIT_WINDOW_MS = String(rateLimitWindowMs);
+  process.env.RATE_LIMIT_MAX_REQUESTS = String(rateLimitMaxRequests);
+  process.env.RATE_LIMIT_MAX_REQUESTS_DOCENTE = String(rateLimitMaxRequestsDocente);
+  process.env.RATE_LIMIT_MAX_REQUESTS_COORDINADOR = String(rateLimitMaxRequestsCoordinador);
+  process.env.RATE_LIMIT_MAX_REQUESTS_ADMIN = String(rateLimitMaxRequestsAdmin);
+  process.env.RATE_LIMIT_NEAR_THRESHOLD_RATIO = String(rateLimitNearThresholdRatio);
   process.env.SESSION_TOKEN_SECRET = sessionSecret;
   process.env.REPORTS_DB_FILE = path.join(tempDir, 'reports-db.json');
 
@@ -404,4 +418,95 @@ describe('backend/server API', () => {
       await app.close();
     }
   });
+
+  it('aplica rate limiting por usuario dentro del mismo tenant', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, {
+      choices: [{ message: { content: '{"puntuacion_sugerida": 88, "justificacion_breve": "Correcto"}' } }]
+    })));
+    const app = await loadServer({ provider: 'openai', internalToken: 'shared-internal-token', rateLimitMaxRequestsDocente: 2 });
+
+    try {
+      const docenteA = buildSessionToken({ sub: 'u-docente-a', role: 'docente', institution: 'inst-1', tenantId: 'tenant-1' });
+      const docenteB = buildSessionToken({ sub: 'u-docente-b', role: 'docente', institution: 'inst-1', tenantId: 'tenant-1' });
+
+      const r1 = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: docenteA, token: 'shared-internal-token', body: basePayload });
+      const r2 = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: docenteA, token: 'shared-internal-token', body: basePayload });
+      const r3 = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: docenteA, token: 'shared-internal-token', body: basePayload });
+      const otherUser = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: docenteB, token: 'shared-internal-token', body: basePayload });
+
+      expect(r1.status).toBe(200);
+      expect(r2.status).toBe(200);
+      expect(r3.status).toBe(429);
+      expect(otherUser.status).toBe(200);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('mantiene backward compatibility por token/IP cuando no hay identidad autenticada', async () => {
+    const app = await loadServer({ provider: 'openai' });
+
+    try {
+      const tokenKey = app.getRateLimitIdentifier({
+        headers: { 'x-internal-token': 'legacy-token' },
+        socket: { remoteAddress: '10.10.0.10' }
+      });
+      const ipKey = app.getRateLimitIdentifier({
+        headers: {},
+        socket: { remoteAddress: '10.10.0.11' }
+      });
+
+      expect(tokenKey).toBe('token:legacy-token');
+      expect(ipKey).toBe('ip:10.10.0.11');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('aplica límites diferenciados por rol y registra saturación', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, {
+      choices: [{ message: { content: '{"puntuacion_sugerida": 88, "justificacion_breve": "Correcto"}' } }]
+    })));
+    const logSpy = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+    const app = await loadServer({
+      provider: 'openai',
+      rateLimitMaxRequestsDocente: 1,
+      rateLimitMaxRequestsCoordinador: 2,
+      rateLimitMaxRequestsAdmin: 3,
+      rateLimitNearThresholdRatio: 0.5
+    });
+
+    try {
+      const docenteToken = buildSessionToken({ sub: 'u-doc', role: 'docente', institution: 'inst-1', tenantId: 'tenant-1' });
+      const coordinadorToken = buildSessionToken({ sub: 'u-coord', role: 'coordinador', institution: 'inst-1', tenantId: 'tenant-1' });
+      const adminToken = buildSessionToken({ sub: 'u-admin', role: 'admin', institution: 'inst-1', tenantId: 'tenant-1' });
+
+      const docenteFirst = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: docenteToken, body: basePayload });
+      const docenteSecond = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: docenteToken, body: basePayload });
+      const coordFirst = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: coordinadorToken, body: basePayload });
+      const coordSecond = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: coordinadorToken, body: basePayload });
+      const coordThird = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: coordinadorToken, body: basePayload });
+      const adminFirst = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: adminToken, body: basePayload });
+      const adminSecond = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: adminToken, body: basePayload });
+      const adminThird = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: adminToken, body: basePayload });
+      const adminFourth = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: adminToken, body: basePayload });
+
+      expect(docenteFirst.status).toBe(200);
+      expect(docenteSecond.status).toBe(429);
+      expect(coordFirst.status).toBe(200);
+      expect(coordSecond.status).toBe(200);
+      expect(coordThird.status).toBe(429);
+      expect(adminFirst.status).toBe(200);
+      expect(adminSecond.status).toBe(200);
+      expect(adminThird.status).toBe(200);
+      expect(adminFourth.status).toBe(429);
+
+      const saturationLogged = logSpy.mock.calls.some(([line]) => String(line).includes('"event":"rate_limit_saturation"'));
+      expect(saturationLogged).toBe(true);
+    } finally {
+      await app.close();
+      logSpy.mockRestore();
+    }
+  });
+
 });

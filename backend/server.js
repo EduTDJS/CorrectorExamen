@@ -8,6 +8,7 @@ import {
 } from './repositories/reportRepository.js';
 import { AuthError, authenticate } from './middleware/auth.js';
 import { AuthorizationError, authorize } from './middleware/authorize.js';
+import { RATE_LIMIT_CONFIG, getRateLimitPolicy } from './config/rateLimit.js';
 import {
   createProviderOrchestrator,
   ProviderIntegrationError,
@@ -17,9 +18,6 @@ import {
 const PORT = Number(process.env.PORT || 8787);
 const INTERNAL_AUTH_TOKEN = process.env.INTERNAL_AUTH_TOKEN || '';
 const INTERNAL_AUTH_HEADER = (process.env.INTERNAL_AUTH_HEADER || 'x-internal-token').toLowerCase();
-const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 60000);
-const RATE_LIMIT_MAX_REQUESTS = Number(process.env.RATE_LIMIT_MAX_REQUESTS || 20);
-const RATE_LIMIT_KEY_STRATEGY = (process.env.RATE_LIMIT_KEY_STRATEGY || 'token_or_ip').toLowerCase();
 
 const API_ERRORS = {
   UNAUTHORIZED: 'internal_auth_unauthorized',
@@ -86,7 +84,8 @@ const logEvent = ({
   from,
   to,
   circuitState,
-  attempts
+  attempts,
+  rateLimit
 }) => {
   const entry = {
     timestamp: new Date().toISOString(),
@@ -135,6 +134,9 @@ const logEvent = ({
   }
   if (attempts) {
     entry.attempts = attempts;
+  }
+  if (rateLimit) {
+    entry.rateLimit = rateLimit;
   }
 
   process.stdout.write(`${JSON.stringify(entry)}\n`);
@@ -185,13 +187,27 @@ const getClientIp = (req) => {
 const getRateLimitIdentifier = (req) => {
   const token = String(req.headers[INTERNAL_AUTH_HEADER] || '').trim();
   const ip = getClientIp(req);
+  const tenantId = String(req.user?.tenantId || req.user?.institution || '').trim();
+  const userId = String(req.user?.userId || '').trim();
 
-  if (RATE_LIMIT_KEY_STRATEGY === 'token' && token) {
+  if (tenantId && userId) {
+    return `tenant:${tenantId}:user:${userId}`;
+  }
+
+  if (RATE_LIMIT_CONFIG.keyStrategy === 'authenticated' && tenantId) {
+    return `tenant:${tenantId}:anonymous`;
+  }
+  if (RATE_LIMIT_CONFIG.keyStrategy === 'token' && token) {
     return `token:${token}`;
   }
-  if (RATE_LIMIT_KEY_STRATEGY === 'ip') {
+  if (RATE_LIMIT_CONFIG.keyStrategy === 'ip') {
     return `ip:${ip}`;
   }
+
+  if (RATE_LIMIT_CONFIG.keyStrategy === 'authenticated_or_token_or_ip') {
+    return token ? `token:${token}` : `ip:${ip}`;
+  }
+
   return token ? `token:${token}` : `ip:${ip}`;
 };
 
@@ -212,24 +228,53 @@ const assertInternalToken = (req) => {
   }
 };
 
-const assertRateLimit = (req) => {
+const assertRateLimit = ({ req, requestId, method, path }) => {
   const now = Date.now();
   const key = getRateLimitIdentifier(req);
-  const bucket = requestBuckets.get(key);
+  const { maxRequests, windowMs, nearThresholdRatio } = getRateLimitPolicy(req.user?.role);
+  let bucket = requestBuckets.get(key);
 
   if (!bucket || now >= bucket.resetAt) {
-    requestBuckets.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return;
+    bucket = { count: 0, resetAt: now + windowMs };
+    requestBuckets.set(key, bucket);
   }
 
-  if (bucket.count >= RATE_LIMIT_MAX_REQUESTS) {
+  bucket.count += 1;
+
+  const ratio = bucket.count / maxRequests;
+  const rateLimitSnapshot = {
+    key,
+    role: req.user?.role || 'anonymous',
+    tenantId: req.user?.tenantId || req.user?.institution || null,
+    userId: req.user?.userId || null,
+    count: bucket.count,
+    maxRequests,
+    windowMs,
+    remainingMs: Math.max(bucket.resetAt - now, 0),
+    thresholdRatio: Number(ratio.toFixed(2))
+  };
+
+  if (ratio >= nearThresholdRatio) {
+    logEvent({
+      requestId,
+      event: 'rate_limit_saturation',
+      method,
+      path,
+      status: bucket.count > maxRequests ? 429 : 200,
+      rateLimit: {
+        ...rateLimitSnapshot,
+        nearThreshold: true,
+        rejected: bucket.count > maxRequests
+      }
+    });
+  }
+
+  if (bucket.count > maxRequests) {
     throw new ApiError('Límite de solicitudes excedido. Intenta nuevamente más tarde.', {
       status: 429,
       code: API_ERRORS.RATE_LIMITED
     });
   }
-
-  bucket.count += 1;
 };
 
 const orchestrator = createProviderOrchestrator({
@@ -353,7 +398,7 @@ const handler = async (req, res) => {
         return;
       }
       assertInternalToken(req);
-      assertRateLimit(req);
+      assertRateLimit({ req, requestId, method: req.method, path: requestPath });
       const payload = await parseBody(req);
       logEvent({
         requestId,
@@ -603,4 +648,4 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
-export { server, handler };
+export { server, handler, getRateLimitIdentifier };
