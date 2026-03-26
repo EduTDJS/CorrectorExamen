@@ -49,12 +49,30 @@ describe('storageService', () => {
         texto: 'AB'
       },
       puntuacionPorPregunta: [
-        { numero: 1, justificacionIA: 'Correcta' },
-        { numero: 2, justificacionIA: 'Correcta' }
+        {
+          numero: 1,
+          justificacionIA: 'Correcta',
+          desglose: {
+            criterioAplicado: 'Comparación directa clave oficial vs respuesta del estudiante',
+            evidencia: { clave: 'A', respuestaEstudiante: 'A', estado: 'correcta', confianzaOCR: null, fuente: '' },
+            resultado: 'Correcta',
+            recomendacion: 'Mantener'
+          }
+        },
+        {
+          numero: 2,
+          justificacionIA: 'Correcta',
+          desglose: {
+            criterioAplicado: 'Comparación directa clave oficial vs respuesta del estudiante',
+            evidencia: { clave: 'B', respuestaEstudiante: 'B', estado: 'correcta', confianzaOCR: null, fuente: '' },
+            resultado: 'Correcta',
+            recomendacion: 'Mantener'
+          }
+        }
       ],
       justificacionesIA: [
-        { pregunta: 1, justificacion: 'Correcta' },
-        { pregunta: 2, justificacion: 'Correcta' }
+        { pregunta: 1, justificacion: 'Correcta', desglose: { criterioAplicado: 'Comparación directa clave oficial vs respuesta del estudiante', evidencia: { clave: 'A', respuestaEstudiante: 'A', estado: 'correcta', confianzaOCR: null, fuente: '' }, resultado: 'Correcta', recomendacion: 'Mantener' } },
+        { pregunta: 2, justificacion: 'Correcta', desglose: { criterioAplicado: 'Comparación directa clave oficial vs respuesta del estudiante', evidencia: { clave: 'B', respuestaEstudiante: 'B', estado: 'correcta', confianzaOCR: null, fuente: '' }, resultado: 'Correcta', recomendacion: 'Mantener' } }
       ],
       organizacion: {
         materiaNormalizada: 'matematica',
@@ -139,7 +157,7 @@ describe('storageService', () => {
       });
 
       expect(JSON.parse(window.localStorage.getItem(STORAGE_REPORTES))).toEqual({
-        schemaVersion: 3,
+        schemaVersion: 4,
         data: []
       });
     });
