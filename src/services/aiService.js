@@ -1,3 +1,5 @@
+import { buildAuthHeaders } from './sessionService';
+
 class AIServiceError extends Error {
   constructor(message, { status, code, provider } = {}) {
     super(message);
@@ -21,8 +23,12 @@ const mapearErrorIntegracion = ({ status, code, provider, fallbackMessage }) => 
     return `El proveedor ${provider || 'IA'} respondió con un formato inválido.`;
   }
 
-  if (status === 401 || status === 403) {
-    return `Credenciales inválidas o sin permisos en ${provider || 'el proveedor de IA'}.`;
+  if (status === 401) {
+    return 'Tu sesión expiró o es inválida. Inicia sesión nuevamente para continuar.';
+  }
+
+  if (status === 403) {
+    return 'No tienes permisos suficientes para solicitar sugerencias de IA.';
   }
 
   if (status === 429) {
@@ -54,9 +60,9 @@ export const obtenerProveedorIA = async () => {
 export const sugerirCalificacionIA = async ({ datos, puntaje }) => {
   const response = await fetch('/api/calificacion/sugerir', {
     method: 'POST',
-    headers: {
+    headers: buildAuthHeaders({
       'Content-Type': 'application/json'
-    },
+    }),
     body: JSON.stringify({ datos, puntaje })
   });
 

@@ -51,6 +51,7 @@ function App() {
     timeoutMs: 0
   });
   const [reporteActualRef, setReporteActualRef] = useState({ id: null, firma: null });
+  const [errorSesionUi, setErrorSesionUi] = useState('');
 
   const { pasoActual, estadoActual, avanzarPaso, retrocederPaso } = useExamWorkflow(pasos);
   const {
@@ -59,7 +60,8 @@ function App() {
     filtrosHistorial,
     setFiltrosHistorial,
     reportesFiltrados,
-    reportesAgrupadosPorMateria
+    reportesAgrupadosPorMateria,
+    errorSesion: errorSesionReportes
   } = useReportes();
 
   useEffect(() => {
@@ -70,6 +72,7 @@ function App() {
     const cargarProveedor = async () => {
       try {
         const proveedor = await obtenerProveedorIA();
+        setErrorSesionUi('');
         setIaEstado((previo) => ({
           ...previo,
           proveedorActivo: proveedor.proveedor,
@@ -247,6 +250,10 @@ function App() {
       setDecisionFinal(sugerencia);
       setErrores((previo) => ({ ...previo, decisionFinal: '' }));
     } catch (error) {
+      if (error?.status === 401 || error?.status === 403) {
+        setErrorSesionUi(error.message || 'Tu sesión no es válida para esta operación.');
+      }
+
       setIaEstado((previo) => ({
         ...previo,
         cargando: false,
@@ -292,8 +299,16 @@ function App() {
 
     const reporteGuardadoPrevio = reporteActualRef.id ? reportes.find((rep) => rep.id === reporteActualRef.id) : null;
     const reporte = generarReporteActual({ id: reporteGuardadoPrevio?.id, creadoEn: reporteGuardadoPrevio?.creadoEn });
-    const guardado = await guardarReportePersistente(reporte);
-    setReporteActualRef({ id: guardado.id, firma: firmaReporteActual });
+
+    try {
+      const guardado = await guardarReportePersistente(reporte);
+      setErrorSesionUi('');
+      setReporteActualRef({ id: guardado.id, firma: firmaReporteActual });
+    } catch (error) {
+      if (error?.status === 401 || error?.status === 403) {
+        setErrorSesionUi(error.message || 'Tu sesión no es válida para guardar reportes.');
+      }
+    }
   };
 
   const exportarReporteActual = (tipo) => {
@@ -392,6 +407,7 @@ function App() {
             estadisticasGrupo={estadisticasGrupo}
             exportarGrupoCSV={() => exportarGrupoCSV(reportesFiltrados)}
             exportarCarpetaMateriaCSV={exportarCarpetaMateriaCSV}
+            errorSesion={errorSesionUi || errorSesionReportes}
           />
         )}
       </section>

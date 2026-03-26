@@ -14,7 +14,8 @@ function StepReporteFinal({
   reportesAgrupadosPorMateria,
   estadisticasGrupo,
   exportarGrupoCSV,
-  exportarCarpetaMateriaCSV
+  exportarCarpetaMateriaCSV,
+  errorSesion
 }) {
   return (
     <div className="paso">
@@ -47,6 +48,8 @@ function StepReporteFinal({
         <button type="button" onClick={() => exportarReporteActual('pdf')}>Exportar PDF</button>
         <button type="button" onClick={() => exportarReporteActual('csv')}>Exportar CSV</button>
       </div>
+
+      {errorSesion && <p className="error">{errorSesion}</p>}
 
       <h3>Vista de grupo e historial</h3>
       <div className="filtros-grid">

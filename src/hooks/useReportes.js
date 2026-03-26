@@ -42,6 +42,7 @@ export const useReportes = () => {
   const [reportes, setReportes] = useState(() => leerReportes());
   const [filtrosHistorial, setFiltrosHistorial] = useState({ materia: '', grupo: '', fecha: '' });
   const [usaBackend, setUsaBackend] = useState(false);
+  const [errorSesion, setErrorSesion] = useState('');
 
   useEffect(() => {
     let cancelado = false;
@@ -50,9 +51,17 @@ export const useReportes = () => {
         if (cancelado) return;
         setReportes(data);
         setUsaBackend(true);
+        setErrorSesion('');
       })
-      .catch(() => {
+      .catch((error) => {
         setUsaBackend(false);
+
+        if (error?.status === 401 || error?.status === 403) {
+          setErrorSesion(error.message);
+          return;
+        }
+
+        setErrorSesion('');
       });
 
     return () => {
@@ -74,13 +83,21 @@ export const useReportes = () => {
       return reporte;
     }
 
-    const guardado = await guardarReporteApi(reporte);
-    setReportes((previo) => {
-      const existe = previo.some((item) => item.id === guardado.id);
-      if (!existe) return [guardado, ...previo];
-      return previo.map((item) => (item.id === guardado.id ? guardado : item));
-    });
-    return guardado;
+    try {
+      const guardado = await guardarReporteApi(reporte);
+      setErrorSesion('');
+      setReportes((previo) => {
+        const existe = previo.some((item) => item.id === guardado.id);
+        if (!existe) return [guardado, ...previo];
+        return previo.map((item) => (item.id === guardado.id ? guardado : item));
+      });
+      return guardado;
+    } catch (error) {
+      if (error?.status === 401 || error?.status === 403) {
+        setErrorSesion(error.message);
+      }
+      throw error;
+    }
   };
 
   const reportesFiltrados = useMemo(() => reportes.filter((reporte) => {
@@ -105,6 +122,7 @@ export const useReportes = () => {
     filtrosHistorial,
     setFiltrosHistorial,
     reportesFiltrados,
-    reportesAgrupadosPorMateria
+    reportesAgrupadosPorMateria,
+    errorSesion
   };
 };

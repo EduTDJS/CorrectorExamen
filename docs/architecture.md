@@ -27,6 +27,7 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
 ┌───────────────┐              ┌───────────────┐           ┌───────────────┐
 │Servicios ext. │              │Persistencia   │           │Exportación    │
 │ocrService     │              │storageService │           │exportService  │
+│               │              │+sessionService│           │               │
 │(Tesseract.js) │              │(API + fallback│           │(jsPDF + CSV)  │
 │               │              │localStorage)  │           │               │
 └──────┬────────┘              └──────┬────────┘           └──────┬────────┘
@@ -60,6 +61,14 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
   - `textoDetectado: string`
   - `respuestasParseadas: Array<{ respuesta: string, confianza: number | null, fuenteLinea: string }>`
 - Umbral de baja confianza en UI: `< 65` (porcentaje OCR).
+
+## Flujo de sesión y autorización
+
+1. La sesión del usuario en frontend se concentra en `src/services/sessionService.js`.
+2. `buildAuthHeaders` reutiliza esa sesión para adjuntar `Authorization: Bearer <token>` en servicios de IA y reportes.
+3. `aiService` protege `POST /api/calificacion/sugerir`; `storageService` protege `GET/POST /api/reportes`, `GET /api/reportes/:id` y `GET /api/reportes/:id/export`.
+4. `backend/server.js` aplica autenticación (`401`) y autorización RBAC (`403`) por acción.
+5. La UI traduce `401/403` en mensajes explícitos para sesión expirada o permisos insuficientes.
 
 ## Flujo de datos de IA
 
