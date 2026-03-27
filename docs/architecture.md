@@ -131,7 +131,7 @@ Los siguientes módulos se consideran críticos para la operación y deben mante
 4. `reportRepository` transforma el payload a modelo normalizado (`schools`, `groups`, `exams`, `students`, `submissions`, `grades`) y mantiene snapshot `reports` para compatibilidad.
 5. `database` ejecuta una sola transacción SQL (`BEGIN IMMEDIATE ... COMMIT`) con orden: upsert entidades núcleo -> upsert `reports` -> inserción en `audit_logs`.
 6. En la misma transacción, se inserta snapshot versionado en `report_versions` con `version_number` incremental por `report_id`.
-7. En lectura, `GET /api/reportes/:id/versiones` y `GET /api/reportes/:id/versiones/:version` exponen historial de versiones sin romper el aislamiento tenant/usuario.
+7. En lectura, `GET /api/reportes/:id/versiones` y `GET /api/reportes/:id/versiones/:version` exponen historial de versiones sin romper el aislamiento tenant/usuario, y ambos responden con envoltura consistente `{ data: ... }`.
 8. Si hay error, se aplica `ROLLBACK` y la API no expone estado parcial.
 9. En lectura (`GET /api/reportes`, `GET /api/reportes/:id`), el backend prioriza datos normalizados y usa `payload_json` como respaldo de compatibilidad.
 10. El frontend refresca estado local en memoria; solo si backend no está disponible, `useReportes` activa fallback controlado en `localStorage`.

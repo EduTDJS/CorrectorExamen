@@ -633,14 +633,14 @@ describe('backend/server API', () => {
         authToken: docenteToken
       });
       expect(version2.status).toBe(200);
-      expect(version2.json.diff).toMatchObject({
+      expect(version2.json.data.diff).toMatchObject({
         calificacionFinal: {
           notaSobre100: { from: 80, to: 92 },
           letra: { from: 'B', to: 'A' },
           justificacionDocente: { from: 'Bien', to: 'Excelente' }
         }
       });
-      expect(version2.json.actor).toBe('u-docente-version');
+      expect(version2.json.data.actor).toBe('u-docente-version');
     } finally {
       await app.close();
     }
