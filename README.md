@@ -137,10 +137,17 @@ En **Revisión de calificaciones**, el razonamiento se visualiza en un panel exp
   - `modelo`
 - La UI también consulta `GET /api/calificacion/proveedor` para mostrar proveedor/modelo activos.
 
-## Persistencia de decisión final
+## Persistencia de decisión final y reportes
 
-- La puntuación y justificación finales de la profesora se persisten en `localStorage`.
-- Se guarda siempre la decisión final editable, independientemente de la sugerencia de IA.
+- **Backend primario:** la persistencia de reportes usa `GET/POST /api/reportes` como fuente de verdad en ejecución.
+- **Fallback controlado:** `localStorage` se usa solo en modo degradado (offline/desarrollo o caída del backend), no como ruta primaria.
+- **Decisión final editable:** la puntuación/justificación docente se conserva para edición y forma parte del objeto de reporte persistido.
+- **Fuente de comportamiento en runtime:** el flujo está implementado en `src/hooks/useReportes.js` (estrategia backend-first + fallback) y `src/services/storageService.js` (cliente API y almacenamiento local de respaldo).
+
+
+## Nota de operación offline/degradada
+
+Para QA y soporte: si `/api/reportes` no está disponible o responde error de conectividad, la app activa automáticamente persistencia local de respaldo (`localStorage`). En ese estado, el historial refleja datos locales del navegador actual; al restablecer backend/sesión, el flujo vuelve a priorizar API.
 
 ## Manejo robusto de errores
 
@@ -156,7 +163,7 @@ La UI muestra errores claros en español para:
 4. Sugerencia IA vía backend propio.
 5. Ajuste docente final con guardado explícito del reporte.
 6. Exportación individual (PDF/CSV) desde reporte guardado o snapshot actual, sin duplicar historial.
-7. Historial local de reportes con filtros.
+7. Historial de reportes con filtros (hidratado desde backend cuando está disponible).
 
 ## Buenas prácticas de captura de fotos
 
