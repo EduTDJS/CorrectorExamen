@@ -98,12 +98,13 @@ Los siguientes módulos se consideran críticos para la operación y deben mante
 ## Flujo de importación masiva (CSV/Excel)
 
 1. `StepIngresoRespuestas` permite cargar archivo de importación (`.csv`, `.xls`, `.xlsx` en SpreadsheetML).
-2. `src/services/importService.js` valida límites (`2MB`, `<=200` filas), normaliza encabezados y aplica contrato por fila.
-3. El servicio normaliza respuestas con las mismas reglas de `examUtils` (`A/B/C/D` + equivalencias OCR).
-4. Los errores se devuelven por registro (`fila`, `matricula`, `errores[]`) para mostrarse en UI.
-5. Si una matrícula aparece duplicada dentro del archivo, se conserva la última fila válida.
-6. `App.jsx` cruza matrículas importadas contra `useReportes` para advertir duplicados ya existentes en historial.
-7. El docente puede cargar cualquier fila válida al formulario y editarla manualmente antes de seguir con revisión/guardado.
+2. `src/services/importService.js` enruta parsing por extensión: CSV nativo, `.xlsx` (OpenXML) y `.xls` (SpreadsheetML/XML 2003), reutilizando un contrato único.
+3. El servicio valida límites (`2MB`, `<=200` filas), normaliza encabezados/alias y aplica `REQUIRED_FIELDS + validarSchema` por fila.
+4. El servicio normaliza respuestas con las mismas reglas de `examUtils` (`A/B/C/D` + equivalencias OCR).
+5. Los errores se devuelven por registro (`fila`, `matricula`, `errores[]`) para mostrarse en UI.
+6. Si una matrícula aparece duplicada dentro del archivo, se conserva la última fila válida.
+7. `App.jsx` cruza matrículas importadas contra `useReportes` para advertir duplicados ya existentes en historial.
+8. El docente puede cargar cualquier fila válida al formulario y editarla manualmente antes de seguir con revisión/guardado.
 
 ## Flujo de sesión y autorización
 

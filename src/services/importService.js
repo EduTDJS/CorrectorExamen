@@ -1,9 +1,10 @@
 import { convertirTextoALista, limpiarRespuestas } from '../utils/examUtils';
+import { strFromU8, unzipSync } from 'fflate';
 
 export const IMPORT_LIMITS = {
   maxRows: 200,
   maxFileSizeBytes: 2 * 1024 * 1024,
-  supportedExtensions: ['csv']
+  supportedExtensions: ['csv', 'xls', 'xlsx']
 };
 
 const REQUIRED_FIELDS = ['estudianteNombre', 'estudianteMatricula', 'respuestas'];
@@ -125,7 +126,7 @@ export const validarArchivoImportacion = (file) => {
 
   const extension = obtenerExtension(file.name);
   if (!IMPORT_LIMITS.supportedExtensions.includes(extension)) {
-    throw new Error('Formato no soportado. Use CSV UTF-8 (.csv).');
+    throw new Error('Formato no soportado. Use CSV UTF-8 (.csv) o Excel (.xls/.xlsx).');
   }
 
   return extension;
@@ -143,13 +144,159 @@ const leerComoTexto = (file) => new Promise((resolve, reject) => {
   reader.readAsText(file);
 });
 
+const leerComoArrayBuffer = (file) => new Promise((resolve, reject) => {
+  if (typeof file?.arrayBuffer === 'function') {
+    file.arrayBuffer().then(resolve).catch(reject);
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+  reader.readAsArrayBuffer(file);
+});
+
+const indiceColumna = (referencia = '') => {
+  const letras = String(referencia).match(/[A-Z]+/i)?.[0]?.toUpperCase() || '';
+  if (!letras) {
+    return -1;
+  }
+
+  return letras.split('').reduce((acc, char) => (acc * 26) + (char.charCodeAt(0) - 64), 0) - 1;
+};
+
+const decodeXml = (value = '') => String(value)
+  .replaceAll('&lt;', '<')
+  .replaceAll('&gt;', '>')
+  .replaceAll('&quot;', '"')
+  .replaceAll('&apos;', '\'')
+  .replaceAll('&amp;', '&');
+
+const extraerFilasXml = (xml = '', rowTag = 'row') => {
+  const regex = new RegExp(`<${rowTag}\\b[^>]*>([\\s\\S]*?)<\\/${rowTag}>`, 'gi');
+  return Array.from(String(xml).matchAll(regex), (match) => match[0]);
+};
+
+const parseXlsxRows = (sheetXmlText, sharedStrings = []) => {
+  const rows = extraerFilasXml(sheetXmlText, 'row');
+  return rows.map((rowText) => {
+    const row = [];
+    const celdas = Array.from(String(rowText).matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/gi));
+
+    celdas.forEach((cellMatch, idx) => {
+      const attrs = cellMatch[1] || '';
+      const body = cellMatch[2] || '';
+      const ref = attrs.match(/\br="([^"]+)"/i)?.[1] || '';
+      const col = indiceColumna(ref);
+      const destino = col >= 0 ? col : idx;
+      const tipo = attrs.match(/\bt="([^"]+)"/i)?.[1] || '';
+      const inline = body.match(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/i)?.[1];
+      const valor = body.match(/<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/i)?.[1];
+      let value = '';
+
+      if (tipo === 's' && typeof valor !== 'undefined') {
+        value = sharedStrings[Number(valor)] || '';
+      } else if (typeof inline !== 'undefined') {
+        value = decodeXml(inline.trim());
+      } else if (typeof valor !== 'undefined') {
+        value = decodeXml(valor.trim());
+      }
+
+      row[destino] = value;
+    });
+
+    return row;
+  });
+};
+
+const parseSpreadsheetXmlRows = (spreadsheetXmlText = '') => {
+  const rows = extraerFilasXml(spreadsheetXmlText, 'Row');
+  return rows.map((rowText) => {
+    const cells = Array.from(String(rowText).matchAll(/<Cell\b[^>]*>([\s\S]*?)<\/Cell>/gi));
+    return cells.map((cellMatch) => {
+      const data = cellMatch[1]?.match(/<Data\b[^>]*>([\s\S]*?)<\/Data>/i)?.[1] || '';
+      return decodeXml(data.trim());
+    });
+  });
+};
+
+const rowsToObjects = (rows = []) => {
+  if (!rows.length) {
+    return [];
+  }
+
+  const headers = rows[0].map((item) => String(item || '').trim());
+  return rows
+    .slice(1)
+    .filter((row) => row.some((value) => String(value || '').trim()))
+    .map((row) => headers.reduce((acc, header, index) => {
+      acc[header] = String(row[index] || '').trim();
+      return acc;
+    }, {}));
+};
+
+const parseExcelTextXml = (xmlText = '') => {
+  if (!String(xmlText).includes('<Workbook')) {
+    throw new Error('No se pudo interpretar el archivo Excel.');
+  }
+
+  return rowsToObjects(parseSpreadsheetXmlRows(xmlText));
+};
+
+const parseExcelBinary = async (file) => {
+  const raw = await leerComoArrayBuffer(file);
+  const zip = unzipSync(new Uint8Array(raw));
+  const keys = Object.keys(zip);
+  const sheetKey = keys.find((key) => /(?:^|\/|\\)xl(?:\/|\\)worksheets(?:\/|\\)sheet\d+\.xml$/i.test(key))
+    || keys.find((key) => /sheet1\.xml$/i.test(key));
+  const sheetFile = sheetKey ? zip[sheetKey] : null;
+
+  if (!sheetFile) {
+    throw new Error('Archivo Excel inválido: faltan hojas de cálculo.');
+  }
+
+  const sheetXmlText = strFromU8(sheetFile);
+  if (!sheetXmlText.includes('<worksheet')) {
+    throw new Error('No se pudo interpretar el archivo Excel.');
+  }
+
+  const sharedStringsKey = keys.find((key) => key.endsWith('xl/sharedStrings.xml'));
+  const sharedStringsFile = sharedStringsKey ? zip[sharedStringsKey] : null;
+  let sharedStrings = [];
+
+  if (sharedStringsFile) {
+    const sharedXmlText = strFromU8(sharedStringsFile);
+    sharedStrings = Array.from(sharedXmlText.matchAll(/<si\b[^>]*>[\s\S]*?<t(?:\s[^>]*)?>([\s\S]*?)<\/t>[\s\S]*?<\/si>/gi))
+      .map((match) => decodeXml((match[1] || '').trim()));
+  }
+
+  return rowsToObjects(parseXlsxRows(sheetXmlText, sharedStrings));
+};
+
 const parseByExtension = async (file, extension) => {
-  const text = await leerComoTexto(file);
   if (extension === 'csv') {
+    const text = await leerComoTexto(file);
     return parseCsvText(text);
   }
 
-  throw new Error('Formato no soportado. Use CSV UTF-8 (.csv).');
+  if (['xlsx', 'xls'].includes(extension)) {
+    try {
+      if (extension === 'xlsx') {
+        try {
+          return await parseExcelBinary(file);
+        } catch {
+          const text = await leerComoTexto(file);
+          return parseExcelTextXml(text);
+        }
+      }
+      const text = await leerComoTexto(file);
+      return parseExcelTextXml(text);
+    } catch {
+      throw new Error('No se pudo leer el archivo Excel. Verifique que no esté dañado y conserve el formato .xls/.xlsx.');
+    }
+  }
+
+  throw new Error('Formato no soportado. Use CSV UTF-8 (.csv) o Excel (.xls/.xlsx).');
 };
 
 export const parsearArchivoImportacion = async ({ file, totalPreguntas }) => {
