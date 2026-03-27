@@ -175,7 +175,7 @@ Campos obligatorios de trazabilidad por evento auditable:
   - Si hay alta concurrencia legítima, subir gradualmente en pasos de 10 y observar tasa de `429` y `rate_limit_saturation`.
 - **Estrategia de clave de rate limit (`RATE_LIMIT_KEY_STRATEGY`):**
   - `authenticated_or_token_or_ip` (recomendado): usa `tenantId + userId`; sin identidad, cae temporalmente a token interno o IP.
-  - `authenticated`: intenta usar solo identidad autenticada (`tenantId + userId` o `tenantId:anonymous`).
+  - `authenticated`: intenta usar identidad autenticada (`tenantId + userId` o `tenantId:anonymous`); si no hay `tenantId`, cae a token interno o IP.
   - `token`: útil cuando consumidores internos usan token compartido y todavía no hay identidad de usuario.
   - `ip`: útil detrás de redes internas con IPs estables y tokens compartidos.
 - **Códigos de error consistentes del endpoint:**

@@ -207,7 +207,8 @@ Cómo interpretar los reportes:
 - `INTERNAL_AUTH_HEADER` (opcional, default `x-internal-token`): nombre del header donde se envía el token interno.
 - `RATE_LIMIT_WINDOW_MS` (opcional, default `60000`): ventana temporal de rate limit en milisegundos.
 - `RATE_LIMIT_MAX_REQUESTS` (opcional, default `20`): máximo de solicitudes permitidas por ventana.
-- `RATE_LIMIT_KEY_STRATEGY` (opcional, default `token_or_ip`): estrategia de partición para rate limit (`token`, `ip`, `token_or_ip`).
+- `RATE_LIMIT_KEY_STRATEGY` (opcional, default `authenticated_or_token_or_ip`): estrategia de partición para rate limit (`authenticated_or_token_or_ip`, `authenticated`, `token`, `ip`).
+  - Semántica: si existe identidad autenticada se usa `tenantId + userId`; si no, se hace fallback a token interno y luego IP.
 - `PORT` (opcional, por defecto `8787`).
 
 ## Ejecución local
