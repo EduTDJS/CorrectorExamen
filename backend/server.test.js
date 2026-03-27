@@ -61,7 +61,10 @@ const loadServer = async ({
   rateLimitMaxRequestsDocente = 20,
   rateLimitMaxRequestsCoordinador = 30,
   rateLimitMaxRequestsAdmin = 40,
-  rateLimitNearThresholdRatio = 0.8
+  rateLimitNearThresholdRatio = 0.8,
+  rateLimitCleanupIntervalMs = 30000,
+  rateLimitMaxBuckets = 5000,
+  rateLimitBucketCountLogIntervalMs = 30000
 } = {}) => {
   process.env.NODE_ENV = 'test';
   process.env.AI_PROVIDER = provider;
@@ -81,6 +84,9 @@ const loadServer = async ({
   process.env.RATE_LIMIT_MAX_REQUESTS_COORDINADOR = String(rateLimitMaxRequestsCoordinador);
   process.env.RATE_LIMIT_MAX_REQUESTS_ADMIN = String(rateLimitMaxRequestsAdmin);
   process.env.RATE_LIMIT_NEAR_THRESHOLD_RATIO = String(rateLimitNearThresholdRatio);
+  process.env.RATE_LIMIT_BUCKET_CLEANUP_INTERVAL_MS = String(rateLimitCleanupIntervalMs);
+  process.env.RATE_LIMIT_MAX_BUCKETS = String(rateLimitMaxBuckets);
+  process.env.RATE_LIMIT_BUCKET_COUNT_LOG_INTERVAL_MS = String(rateLimitBucketCountLogIntervalMs);
   process.env.SESSION_TOKEN_SECRET = sessionSecret;
   process.env.REPORTS_DB_FILE = path.join(tempDir, 'reports-db.sqlite');
 
@@ -985,6 +991,103 @@ describe('backend/server API', () => {
       await app.close();
       logSpy.mockRestore();
     }
+  });
+
+  it('elimina buckets expirados de forma oportunista antes de evaluar límite', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, {
+      choices: [{ message: { content: '{"puntuacion_sugerida": 88, "justificacion_breve": "Correcto"}' } }]
+    })));
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-27T12:00:00.000Z'));
+    const app = await loadServer({
+      provider: 'openai',
+      rateLimitMaxRequestsDocente: 1,
+      rateLimitWindowMs: 50
+    });
+
+    try {
+      const docenteToken = buildSessionToken({ sub: 'u-doc-exp', role: 'docente', institution: 'inst-1', tenantId: 'tenant-1' });
+      const first = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: docenteToken, body: basePayload });
+      expect(first.status).toBe(200);
+
+      vi.setSystemTime(new Date('2026-03-27T12:00:01.000Z'));
+      const second = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: docenteToken, body: basePayload });
+      expect(second.status).toBe(200);
+    } finally {
+      await app.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it('mantiene estable el conteo de buckets bajo alta cardinalidad simulada', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, {
+      choices: [{ message: { content: '{"puntuacion_sugerida": 88, "justificacion_breve": "Correcto"}' } }]
+    })));
+    const logSpy = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+    const app = await loadServer({
+      provider: 'openai',
+      rateLimitMaxRequestsDocente: 2,
+      rateLimitMaxBuckets: 25,
+      rateLimitBucketCountLogIntervalMs: 1
+    });
+
+    try {
+      const requests = Array.from({ length: 90 }, (_, index) => {
+        const token = buildSessionToken({
+          sub: `u-doc-hc-${index}`,
+          role: 'docente',
+          institution: 'inst-hc',
+          tenantId: 'tenant-hc'
+        });
+        return apiRequest({
+          baseUrl: app.baseUrl,
+          path: '/api/calificacion/sugerir',
+          method: 'POST',
+          authToken: token,
+          body: basePayload
+        });
+      });
+
+      const responses = await Promise.all(requests);
+      expect(responses.every((response) => response.status === 200)).toBe(true);
+
+      const bucketCountMetrics = logSpy.mock.calls
+        .map(([line]) => String(line))
+        .filter((line) => line.includes('"event":"rate_limit_bucket_count"'))
+        .map((line) => JSON.parse(line).metrics?.rate_limit_bucket_count)
+        .filter((value) => Number.isFinite(value));
+
+      expect(bucketCountMetrics.length).toBeGreaterThan(0);
+      expect(Math.max(...bucketCountMetrics)).toBeLessThanOrEqual(25);
+    } finally {
+      await app.close();
+      logSpy.mockRestore();
+    }
+  });
+
+  it('expone utilidades unitarias para limpieza y descarte LRU simple', async () => {
+    const { cleanupExpiredBuckets, enforceBucketCapacity } = await import('./server.js');
+    const buckets = new Map([
+      ['alive', { resetAt: 2100, lastSeenAt: 3, count: 1 }],
+      ['expired-a', { resetAt: 900, lastSeenAt: 1, count: 1 }],
+      ['expired-b', { resetAt: 1000, lastSeenAt: 2, count: 1 }]
+    ]);
+
+    const removed = cleanupExpiredBuckets(buckets, 1500);
+    expect(removed).toBe(2);
+    expect(buckets.has('alive')).toBe(true);
+    expect(buckets.size).toBe(1);
+
+    buckets.set('recent', { resetAt: 2500, lastSeenAt: 20, count: 1 });
+    buckets.set('oldest', { resetAt: 2200, lastSeenAt: 1, count: 1 });
+    buckets.set('middle', { resetAt: 2300, lastSeenAt: 10, count: 1 });
+
+    const evicted = enforceBucketCapacity(buckets, 2);
+    expect(evicted).toBe(2);
+    expect(buckets.size).toBe(2);
+    expect(buckets.has('recent')).toBe(true);
+    expect(buckets.has('middle')).toBe(true);
+    expect(buckets.has('oldest')).toBe(false);
   });
 
 });

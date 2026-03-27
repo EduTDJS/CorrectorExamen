@@ -33,6 +33,8 @@ Este documento define el formato de logs del backend (`backend/server.js`) para 
    - Se emite al completar una exportación exitosa (`GET /api/reportes/:id/export`).
 8. `report_scope_denied`
    - Se emite cuando un reporte existe, pero el actor autenticado no tiene alcance tenant/usuario sobre el recurso.
+9. `rate_limit_bucket_count`
+   - Se emite para observabilidad del tamaño del mapa de buckets de rate limit (`rate_limit_bucket_count`) durante limpieza periódica, limpieza oportunista y control de capacidad.
 
 ## Formato JSON de logs
 
@@ -42,7 +44,7 @@ Campos base:
 
 - `timestamp` (ISO-8601 UTC)
 - `level` (`info` | `error`)
-- `event` (`request_started` | `provider_selected` | `provider_failover` | `provider_circuit_*` | `rate_limit_saturation` | `request_completed` | `report_exported` | `report_scope_denied`)
+- `event` (`request_started` | `provider_selected` | `provider_failover` | `provider_circuit_*` | `rate_limit_saturation` | `rate_limit_bucket_count` | `request_completed` | `report_exported` | `report_scope_denied`)
 - `requestId`
 - `method`
 - `path`
@@ -55,7 +57,7 @@ Campos opcionales por evento:
 - `model` (modelo configurado)
 - `errorCode` (código interno, ej. `provider_timeout`)
 - `payloadMetadata` (solo metadatos no sensibles)
-- `metrics` (contador agregado de `failovers`, `providerErrors`, `circuitOpenEvents`)
+- `metrics` (contador agregado de `failovers`, `providerErrors`, `circuitOpenEvents` y/o métrica `rate_limit_bucket_count`)
 - `from`/`to` (proveedor origen/destino en failover)
 - `circuitState` (`closed` | `open` | `half_open`)
 - `attempts` (intentos y códigos de error por proveedor)
@@ -117,6 +119,17 @@ Ejemplo con error:
 - Crear dashboard por `rateLimit.role` para validar que límites por rol estén balanceados.
 - Revisar distribución de `rateLimit.key` para detectar tokens compartidos o tenants saturados.
 - Ajustar `RATE_LIMIT_NEAR_THRESHOLD_RATIO` (default `0.8`) según ruido esperado de alertas tempranas.
+- Monitorear `event = "rate_limit_bucket_count"` y alertar si `metrics.rate_limit_bucket_count` se aproxima sostenidamente a `RATE_LIMIT_MAX_BUCKETS`.
+
+### Política operativa de buckets de rate limit
+
+- Cada clave (`tenant:user`, token o IP según estrategia) mantiene un bucket con `count`, `resetAt` y `lastSeenAt`.
+- Limpieza periódica: un timer configurable elimina entradas expiradas (`resetAt < now`) con `RATE_LIMIT_BUCKET_CLEANUP_INTERVAL_MS` (default `30000` ms).
+- Limpieza oportunista: cada ejecución de `assertRateLimit` corre mantenimiento para no depender solo de timers (relevante en runtimes serverless).
+- Capacidad máxima: `RATE_LIMIT_MAX_BUCKETS` (default `5000`). Si se excede:
+  1. se eliminan expirados agresivamente;
+  2. si aún excede, se aplica descarte LRU simple (menor `lastSeenAt`).
+- Frecuencia de emisión de métrica de tamaño del mapa: `RATE_LIMIT_BUCKET_COUNT_LOG_INTERVAL_MS` (default `30000` ms), con emisión forzada cuando hay limpieza/evicción.
 
 ## Observabilidad de cobertura de pruebas (CI)
 

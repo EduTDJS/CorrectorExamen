@@ -169,6 +169,9 @@ Campos obligatorios de trazabilidad por evento auditable:
   - `RATE_LIMIT_WINDOW_MS=60000` (1 minuto).
   - `RATE_LIMIT_MAX_REQUESTS=20` como límite base para roles no explícitos.
   - `RATE_LIMIT_MAX_REQUESTS_DOCENTE=20`, `RATE_LIMIT_MAX_REQUESTS_COORDINADOR=30`, `RATE_LIMIT_MAX_REQUESTS_ADMIN=40`.
+  - `RATE_LIMIT_BUCKET_CLEANUP_INTERVAL_MS=30000` para limpieza periódica de buckets expirados.
+  - `RATE_LIMIT_MAX_BUCKETS=5000` para tope de cardinalidad en memoria con descarte seguro.
+  - `RATE_LIMIT_BUCKET_COUNT_LOG_INTERVAL_MS=30000` para telemetría de tamaño de mapa (`rate_limit_bucket_count`).
   - Si hay alta concurrencia legítima, subir gradualmente en pasos de 10 y observar tasa de `429` y `rate_limit_saturation`.
 - **Estrategia de clave de rate limit (`RATE_LIMIT_KEY_STRATEGY`):**
   - `authenticated_or_token_or_ip` (recomendado): usa `tenantId + userId`; sin identidad, cae temporalmente a token interno o IP.
@@ -196,4 +199,7 @@ Campos obligatorios de trazabilidad por evento auditable:
 - `RATE_LIMIT_MAX_REQUESTS_ADMIN` (opcional, default `40`)
 - `RATE_LIMIT_NEAR_THRESHOLD_RATIO` (opcional, default `0.8`)
 - `RATE_LIMIT_KEY_STRATEGY` (opcional, default `authenticated_or_token_or_ip`; valores: `authenticated_or_token_or_ip`, `authenticated`, `token`, `ip`)
+- `RATE_LIMIT_BUCKET_CLEANUP_INTERVAL_MS` (opcional, default `30000`)
+- `RATE_LIMIT_MAX_BUCKETS` (opcional, default `5000`)
+- `RATE_LIMIT_BUCKET_COUNT_LOG_INTERVAL_MS` (opcional, default `30000`)
 - `PORT` (opcional, default `8787`)

@@ -6,6 +6,9 @@ const asPositiveInt = (value, fallback) => {
 const RATE_LIMIT_CONFIG = {
   windowMs: asPositiveInt(process.env.RATE_LIMIT_WINDOW_MS, 60000),
   defaultMaxRequests: asPositiveInt(process.env.RATE_LIMIT_MAX_REQUESTS, 20),
+  cleanupIntervalMs: asPositiveInt(process.env.RATE_LIMIT_BUCKET_CLEANUP_INTERVAL_MS, 30000),
+  maxBuckets: asPositiveInt(process.env.RATE_LIMIT_MAX_BUCKETS, 5000),
+  bucketCountLogIntervalMs: asPositiveInt(process.env.RATE_LIMIT_BUCKET_COUNT_LOG_INTERVAL_MS, 30000),
   keyStrategy: (process.env.RATE_LIMIT_KEY_STRATEGY || 'authenticated_or_token_or_ip').toLowerCase(),
   nearThresholdRatio: Number(process.env.RATE_LIMIT_NEAR_THRESHOLD_RATIO || 0.8),
   roleLimits: {
