@@ -1,4 +1,12 @@
-function StepRevision({ resultadoRevision, mapearLetraPucmm, sugerirCalificacionConIA, iaEstado, desglosePreguntas }) {
+function StepRevision({
+  resultadoRevision,
+  mapearLetraPucmm,
+  sugerirCalificacionConIA,
+  iaEstado,
+  desglosePreguntas,
+  overridesDocente,
+  onOverrideDocente
+}) {
   const preguntasBajaConfianza = desglosePreguntas
     .filter((item) => item.bajaConfianza && typeof item.confianzaOCR === 'number')
     .sort((a, b) => a.confianzaOCR - b.confianzaOCR);
@@ -42,6 +50,7 @@ function StepRevision({ resultadoRevision, mapearLetraPucmm, sugerirCalificacion
             <th>Confianza OCR</th>
             <th>Fuente OCR</th>
             <th>Puntaje</th>
+            <th>Override docente</th>
             <th>Razonamiento (expandible)</th>
           </tr>
         </thead>
@@ -55,6 +64,18 @@ function StepRevision({ resultadoRevision, mapearLetraPucmm, sugerirCalificacion
               <td>{item.confianzaOCR === null ? '-' : `${item.confianzaOCR.toFixed(1)}%`}</td>
               <td>{item.fuenteOCR || '-'}</td>
               <td>{item.puntaje.toFixed(2)}</td>
+              <td>
+                <input
+                  aria-label={`Override pregunta ${item.numero}`}
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={overridesDocente[item.numero] ?? ''}
+                  onChange={(e) => onOverrideDocente(item.numero, e.target.value)}
+                  placeholder="Auto"
+                />
+              </td>
               <td>
                 <details>
                   <summary>Ver desglose</summary>

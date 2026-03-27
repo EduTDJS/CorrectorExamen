@@ -10,6 +10,7 @@ import {
   updateReport,
   deleteReport
 } from './repositories/reportRepository.js';
+import { createRubric, listRubrics } from './repositories/rubricRepository.js';
 import { AuthError, authenticate } from './middleware/auth.js';
 import { AuthorizationError, authorize } from './middleware/authorize.js';
 import { RATE_LIMIT_CONFIG, getRateLimitPolicy } from './config/rateLimit.js';
@@ -670,6 +671,63 @@ const handler = async (req, res) => {
         error: {
           message: error?.message || 'No se pudieron listar reportes.',
           code: API_ERRORS.BAD_REQUEST,
+          requestId
+        }
+      }, { requestId });
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/rubricas') {
+    const accessResult = await runProtectedAction({
+      req,
+      res,
+      requestId,
+      action: 'view_history',
+      resource: '/api/rubricas',
+      onAllowed: async () => true
+    });
+    if (!accessResult) {
+      return;
+    }
+
+    try {
+      const rubricas = await listRubrics();
+      sendJson(res, 200, { data: rubricas }, { requestId });
+    } catch (error) {
+      sendJson(res, 500, {
+        error: {
+          message: error?.message || 'No se pudieron listar rúbricas.',
+          code: API_ERRORS.BAD_REQUEST,
+          requestId
+        }
+      }, { requestId });
+    }
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/rubricas') {
+    const accessResult = await runProtectedAction({
+      req,
+      res,
+      requestId,
+      action: 'create_exam',
+      resource: '/api/rubricas',
+      onAllowed: async () => true
+    });
+    if (!accessResult) {
+      return;
+    }
+
+    try {
+      const payload = await parseBody(req);
+      const rubrica = await createRubric(payload);
+      sendJson(res, 201, { data: rubrica }, { requestId });
+    } catch (error) {
+      sendJson(res, 400, {
+        error: {
+          message: error?.message || 'No se pudo crear la rúbrica.',
+          code: API_ERRORS.PAYLOAD,
           requestId
         }
       }, { requestId });

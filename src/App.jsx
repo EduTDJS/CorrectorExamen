@@ -15,6 +15,8 @@ import { guardarDecisionFinal, leerDecisionFinal, normalizarNombreMateria } from
 import { convertirTextoALista, letrasValidas, limpiarRespuestas, mapearLetraPucmm } from './utils/examUtils';
 import { crearDesglosePregunta } from './utils/questionBreakdown';
 import { detectarMatriculasDuplicadas } from './hooks/useReportes';
+import { construirClaveDesdeCriterios } from './features/rubrics/rubricModel';
+import { calcularPuntajeRubrica } from './utils/rubricScoring';
 
 const pasos = [
   'Configuración del examen',
@@ -54,6 +56,7 @@ function App() {
   });
   const [reporteActualRef, setReporteActualRef] = useState({ id: null, firma: null });
   const [errorSesionUi, setErrorSesionUi] = useState('');
+  const [overridesDocente, setOverridesDocente] = useState({});
   const [importacionEstado, setImportacionEstado] = useState({
     filas: [],
     errores: [],
@@ -64,7 +67,18 @@ function App() {
     error: ''
   });
 
-  const { pasoActual, estadoActual, avanzarPaso, retrocederPaso } = useExamWorkflow(pasos);
+  const {
+    pasoActual,
+    estadoActual,
+    avanzarPaso,
+    retrocederPaso,
+    rubricas,
+    rubricaSeleccionada,
+    rubricaSeleccionadaId,
+    estadoRubricas,
+    cargarRubricas,
+    seleccionarRubrica
+  } = useExamWorkflow(pasos);
   const {
     reportes,
     guardarReporte: guardarReportePersistente,
@@ -102,6 +116,23 @@ function App() {
     cargarProveedor();
   }, []);
 
+  useEffect(() => {
+    cargarRubricas();
+  }, [cargarRubricas]);
+
+  useEffect(() => {
+    if (!rubricaSeleccionada) return;
+
+    const claveSugerida = construirClaveDesdeCriterios(rubricaSeleccionada.criterios);
+    setDatos((previo) => ({
+      ...previo,
+      materia: rubricaSeleccionada.materia,
+      totalPreguntas: String(rubricaSeleccionada.criterios.length),
+      claveRespuestas: claveSugerida
+    }));
+    setRespuestasLista((previo) => convertirTextoALista(previo, rubricaSeleccionada.criterios.length));
+  }, [rubricaSeleccionada]);
+
   const totalPreguntasNumero = Number(datos.totalPreguntas);
 
   const puntosPorPregunta = useMemo(() => {
@@ -112,7 +143,7 @@ function App() {
   const claveLimpia = useMemo(() => limpiarRespuestas(datos.claveRespuestas), [datos.claveRespuestas]);
   const respuestasLimpias = useMemo(() => limpiarRespuestas(respuestasLista), [respuestasLista]);
 
-  const desglosePreguntas = useMemo(() => {
+  const desgloseBase = useMemo(() => {
     const total = totalPreguntasNumero > 0 ? totalPreguntasNumero : Math.max(claveLimpia.length, respuestasLimpias.length);
     return Array.from({ length: total }, (_, indice) => crearDesglosePregunta({
       numero: indice + 1,
@@ -122,6 +153,12 @@ function App() {
       umbralBajaConfianza: UMBRAL_BAJA_CONFIANZA
     }));
   }, [claveLimpia, puntosPorPregunta, respuestasLimpias.length, respuestasLista, totalPreguntasNumero]);
+
+  const desglosePreguntas = useMemo(() => calcularPuntajeRubrica({
+    desgloseBase,
+    rubrica: rubricaSeleccionada,
+    overridesDocente
+  }), [desgloseBase, overridesDocente, rubricaSeleccionada]);
 
   const resultadoRevision = useMemo(() => {
     const aciertos = desglosePreguntas.filter((item) => item.correcta).length;
@@ -235,6 +272,13 @@ function App() {
       };
       return copia;
     });
+  };
+
+  const actualizarOverrideDocente = (numeroPregunta, valor) => {
+    setOverridesDocente((previo) => ({
+      ...previo,
+      [numeroPregunta]: valor
+    }));
   };
 
   const validarPaso = (indice) => {
@@ -408,6 +452,10 @@ function App() {
             setRespuestasLista={setRespuestasLista}
             convertirTextoALista={convertirTextoALista}
             puntosPorPregunta={puntosPorPregunta}
+            rubricas={rubricas}
+            rubricaSeleccionadaId={rubricaSeleccionadaId}
+            onSeleccionarRubrica={seleccionarRubrica}
+            estadoRubricas={estadoRubricas}
           />
         )}
 
@@ -440,6 +488,8 @@ function App() {
             sugerirCalificacionConIA={sugerirCalificacionConIA}
             iaEstado={iaEstado}
             desglosePreguntas={desglosePreguntas}
+            overridesDocente={overridesDocente}
+            onOverrideDocente={actualizarOverrideDocente}
           />
         )}
 
