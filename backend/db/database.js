@@ -120,7 +120,7 @@ const insertAuditLogSql = (auditLog) => `
   );
 `;
 
-const deleteReportGraphSql = ({ reportId, submissionId }) => `
+const deleteReportGraphSql = ({ reportId, submissionId, auditLogs = [] }) => `
   BEGIN IMMEDIATE TRANSACTION;
   DELETE FROM reports WHERE id = ${sqlLiteral(reportId)};
   DELETE FROM submissions WHERE id = ${sqlLiteral(submissionId)};
@@ -132,6 +132,7 @@ const deleteReportGraphSql = ({ reportId, submissionId }) => `
   WHERE id NOT IN (SELECT DISTINCT school_id FROM groups WHERE school_id IS NOT NULL);
   DELETE FROM students
   WHERE id NOT IN (SELECT DISTINCT student_id FROM submissions WHERE student_id IS NOT NULL);
+  ${auditLogs.map((auditLog) => insertAuditLogSql(auditLog)).join('\n')}
   COMMIT;
 `;
 
@@ -159,11 +160,11 @@ const createSqlAdapter = async () => {
         return false;
       }
 
-      const deleteSql = `
-        ${deleteReportGraphSql({ reportId, submissionId: report.submission_id })}
-        ${auditLogs.map((auditLog) => insertAuditLogSql(auditLog)).join('\n')}
-      `;
-      await client.exec(deleteSql);
+      await client.exec(deleteReportGraphSql({
+        reportId,
+        submissionId: report.submission_id,
+        auditLogs
+      }));
 
       return true;
     },

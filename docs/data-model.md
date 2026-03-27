@@ -140,7 +140,9 @@ Orden recomendado:
 
 ## Garantía transaccional
 
-Cada operación de creación/actualización de reportes ejecuta en una misma transacción SQL:
+Cada operación de persistencia de reportes ejecuta en una misma transacción SQL:
+
+### Crear/actualizar reporte
 
 1. upsert de `schools/groups/exams/students`.
 2. upsert de `submissions`.
@@ -149,7 +151,14 @@ Cada operación de creación/actualización de reportes ejecuta en una misma tra
 5. inserción en `report_versions` con incremento de `version_number`.
 6. inserción en `audit_logs`.
 
-Si falla un paso, se revierte toda la transacción.
+### Eliminar reporte
+
+1. borrado de `reports` y su `submission` asociada.
+2. limpieza de huérfanos en `exams/groups/schools/students`.
+3. inserción de `audit_logs` de acción `report_deleted`.
+4. `COMMIT`.
+
+Si falla cualquier paso (incluyendo auditoría), se revierte toda la transacción para evitar borrados parciales.
 
 ## Indicadores mínimos de respaldo (modelo operativo)
 
