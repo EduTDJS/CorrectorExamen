@@ -1,3 +1,5 @@
+import { normalizeRole } from '../middleware/auth.js';
+
 const asPositiveInt = (value, fallback) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
@@ -19,7 +21,7 @@ const RATE_LIMIT_CONFIG = {
 };
 
 const getRateLimitPolicy = (role = '') => {
-  const normalizedRole = String(role || '').trim().toLowerCase();
+  const normalizedRole = normalizeRole(role);
   const maxRequests = RATE_LIMIT_CONFIG.roleLimits[normalizedRole] || RATE_LIMIT_CONFIG.defaultMaxRequests;
 
   return {

@@ -4,6 +4,10 @@ const AUTH_ERRORS = {
   UNAUTHORIZED: 'auth_unauthorized'
 };
 
+const ROLE_ALIASES = {
+  administrador: 'admin'
+};
+
 class AuthError extends Error {
   constructor(message, { status = 401, code = AUTH_ERRORS.UNAUTHORIZED } = {}) {
     super(message);
@@ -65,7 +69,7 @@ const verifyToken = (token, secret) => {
 
 const validateIdentityPayload = (payload) => {
   const userId = String(payload?.sub || '').trim();
-  const role = String(payload?.role || '').trim();
+  const role = normalizeRole(payload?.role);
   const institution = String(payload?.institution || '').trim();
   const tenantId = String(payload?.tenantId || institution || '').trim();
   const sessionId = String(payload?.sessionId || '').trim();
@@ -91,6 +95,11 @@ const validateIdentityPayload = (payload) => {
   };
 };
 
+const normalizeRole = (role) => {
+  const normalizedRole = String(role || '').trim().toLowerCase();
+  return ROLE_ALIASES[normalizedRole] || normalizedRole;
+};
+
 const authenticate = (req, options = {}) => {
   const sessionTokenSecret = String(options.sessionTokenSecret || process.env.SESSION_TOKEN_SECRET || '').trim();
   if (!sessionTokenSecret) {
@@ -106,4 +115,4 @@ const authenticate = (req, options = {}) => {
   return req.user;
 };
 
-export { AUTH_ERRORS, AuthError, authenticate };
+export { AUTH_ERRORS, AuthError, authenticate, normalizeRole };

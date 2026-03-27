@@ -845,6 +845,7 @@ describe('backend/server API', () => {
     })));
     const app = await loadServer({ provider: 'openai' });
     const adminToken = buildSessionToken({ role: 'admin', sub: 'u-admin-1' });
+    const adminAliasToken = buildSessionToken({ role: '  Administrador  ', sub: 'u-admin-alias-1' });
     const docenteToken = buildSessionToken({ role: 'docente', sub: 'u-docente-1' });
     const coordinadorToken = buildSessionToken({ role: 'coordinador', sub: 'u-coord-1' });
     const correctorToken = buildSessionToken({ role: 'corrector', sub: 'u-corrector-1' });
@@ -938,6 +939,15 @@ describe('backend/server API', () => {
         body: payload
       });
       expect(createByAdmin.status).toBe(201);
+
+      const createByAdminAlias = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        authToken: adminAliasToken,
+        body: payload
+      });
+      expect(createByAdminAlias.status).toBe(201);
     } finally {
       await app.close();
     }
@@ -1121,6 +1131,7 @@ describe('backend/server API', () => {
       const docenteToken = buildSessionToken({ sub: 'u-doc', role: 'docente', institution: 'inst-1', tenantId: 'tenant-1' });
       const coordinadorToken = buildSessionToken({ sub: 'u-coord', role: 'coordinador', institution: 'inst-1', tenantId: 'tenant-1' });
       const adminToken = buildSessionToken({ sub: 'u-admin', role: 'admin', institution: 'inst-1', tenantId: 'tenant-1' });
+      const adminAliasToken = buildSessionToken({ sub: 'u-admin-alias', role: 'Administrador', institution: 'inst-1', tenantId: 'tenant-1' });
 
       const docenteFirst = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: docenteToken, body: basePayload });
       const docenteSecond = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: docenteToken, body: basePayload });
@@ -1131,6 +1142,10 @@ describe('backend/server API', () => {
       const adminSecond = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: adminToken, body: basePayload });
       const adminThird = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: adminToken, body: basePayload });
       const adminFourth = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: adminToken, body: basePayload });
+      const adminAliasFirst = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: adminAliasToken, body: basePayload });
+      const adminAliasSecond = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: adminAliasToken, body: basePayload });
+      const adminAliasThird = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: adminAliasToken, body: basePayload });
+      const adminAliasFourth = await apiRequest({ baseUrl: app.baseUrl, path: '/api/calificacion/sugerir', method: 'POST', authToken: adminAliasToken, body: basePayload });
 
       expect(docenteFirst.status).toBe(200);
       expect(docenteSecond.status).toBe(429);
@@ -1141,6 +1156,10 @@ describe('backend/server API', () => {
       expect(adminSecond.status).toBe(200);
       expect(adminThird.status).toBe(200);
       expect(adminFourth.status).toBe(429);
+      expect(adminAliasFirst.status).toBe(200);
+      expect(adminAliasSecond.status).toBe(200);
+      expect(adminAliasThird.status).toBe(200);
+      expect(adminAliasFourth.status).toBe(429);
 
       const saturationLogged = logSpy.mock.calls.some(([line]) => String(line).includes('"event":"rate_limit_saturation"'));
       expect(saturationLogged).toBe(true);
