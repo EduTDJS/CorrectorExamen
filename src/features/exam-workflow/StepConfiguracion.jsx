@@ -1,7 +1,30 @@
-function StepConfiguracion({ datos, errores, actualizarDato, setRespuestasLista, convertirTextoALista, puntosPorPregunta }) {
+function StepConfiguracion({
+  datos,
+  errores,
+  actualizarDato,
+  setRespuestasLista,
+  convertirTextoALista,
+  puntosPorPregunta,
+  rubricas,
+  rubricaSeleccionadaId,
+  onSeleccionarRubrica,
+  estadoRubricas
+}) {
   return (
     <div className="paso">
       <h2>Configuración del examen</h2>
+      <label>Plantilla de rúbrica
+        <select value={rubricaSeleccionadaId} onChange={(e) => onSeleccionarRubrica(e.target.value)}>
+          <option value="">Sin plantilla</option>
+          {rubricas.map((rubrica) => (
+            <option key={rubrica.id} value={rubrica.id}>
+              {rubrica.materia} · {rubrica.grado} · v{rubrica.version}
+            </option>
+          ))}
+        </select>
+      </label>
+      {estadoRubricas.error && <p className="detalle">{estadoRubricas.error}</p>}
+      {estadoRubricas.cargando && <p className="detalle">Cargando plantillas de rúbrica…</p>}
       <label>Materia<input value={datos.materia} onChange={(e) => actualizarDato('materia', e.target.value)} />{errores.materia && <span className="error">{errores.materia}</span>}</label>
       <label>Grupo<input value={datos.grupo} onChange={(e) => actualizarDato('grupo', e.target.value)} />{errores.grupo && <span className="error">{errores.grupo}</span>}</label>
       <label>Fecha<input type="date" value={datos.fecha} onChange={(e) => actualizarDato('fecha', e.target.value)} />{errores.fecha && <span className="error">{errores.fecha}</span>}</label>

@@ -96,4 +96,31 @@ describe('App - flujo guardar y exportar', () => {
       expect(screen.getByLabelText('Respuestas del estudiante (A/B/C/D)')).toHaveValue('DBCD');
     });
   });
+
+  it('carga plantilla de rúbrica y permite override manual docente', async () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText('Plantilla de rúbrica'), {
+      target: { value: 'rubrica-matematicas-6to-v1' }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Materia')).toHaveValue('Matemáticas');
+      expect(screen.getByLabelText('Total de preguntas')).toHaveValue(4);
+      expect(screen.getByLabelText('Clave de respuestas (solo A/B/C/D)')).toHaveValue('ABCD');
+    });
+
+    fireEvent.change(screen.getByLabelText('Grupo'), { target: { value: 'A-01' } });
+    fireEvent.change(screen.getByLabelText('Fecha'), { target: { value: '2026-03-26' } });
+    fireEvent.change(screen.getByLabelText('Nombre estudiante'), { target: { value: 'Ana Pérez' } });
+    fireEvent.change(screen.getByLabelText('Matrícula estudiante'), { target: { value: '2023001' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
+
+    fireEvent.change(await screen.findByLabelText('Respuestas del estudiante (A/B/C/D)'), { target: { value: 'ABCD' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
+
+    const overrideInput = await screen.findByLabelText('Override pregunta 1');
+    fireEvent.change(overrideInput, { target: { value: '7' } });
+    expect(await screen.findByText('7.00')).toBeInTheDocument();
+  });
 });

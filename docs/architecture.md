@@ -20,7 +20,7 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
                 ▼
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ Dominio / Flujo                                                            │
-│ hooks/useExamWorkflow + hooks/useReportes + utils/examUtils               │
+│ hooks/useExamWorkflow + hooks/useReportes + utils/examUtils + rúbricas    │
 └───────┬─────────────────────────────┬───────────────────────────┬──────────┘
         │                             │                           │
         ▼                             ▼                           ▼
@@ -45,6 +45,7 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
 │ Backend Node (backend/server.js)                                          │
 │ POST /api/calificacion/sugerir -> providerOrchestrator (primario/sec.)    │
 │ POST /api/reportes + GET /api/reportes + GET /api/reportes/:id            │
+│ GET/POST /api/rubricas -> rubricRepository                                │
 │ GET /api/reportes/:id/versiones (+ /:version)                             │
 │ Resiliencia: fallback + reintentos + circuit breaker por proveedor         │
 └────────────────────────────────────────────────────────────────────────────┘
@@ -57,6 +58,14 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
 3. `parsearOCRPorNumeroPregunta` (en `src/utils/examUtils.js`) aplica parsing tolerante a ruido (ej.: `1) A`, `P1-A`, `01.A`, y caracteres confusos `4/8/0/O`).
 4. El frontend conserva una estructura enriquecida por pregunta: `{ respuesta, confianza, fuenteLinea }`.
 5. `StepIngresoRespuestas` y `StepRevision` resaltan filas con baja confianza para revisión docente.
+
+## Flujo de plantillas de rúbrica y scoring
+
+1. `useExamWorkflow` carga plantillas desde `GET /api/rubricas` y usa semillas locales como fallback.
+2. `StepConfiguracion` muestra un selector de plantilla (`materia`, `grado`, `version`) para precargar criterios.
+3. Al seleccionar plantilla, `App.jsx` autocompleta `materia`, `totalPreguntas` y `claveRespuestas` usando `criterios[]`.
+4. El cálculo de puntaje usa `src/utils/rubricScoring.js`, que aplica pesos por criterio y reglas de penalización/bonificación.
+5. `StepRevision` permite override manual docente por pregunta; el ajuste se refleja en el puntaje y justificación final.
 
 ### Contrato OCR interno
 
@@ -174,3 +183,4 @@ Ejemplo con OpenAI:
 - [ADR 0006: Selección de proveedor IA por variable de entorno y contrato normalizado](adr/0006-ai-provider-env-y-contrato-normalizado.md)
 - [ADR 0007: Persistencia de reportes en backend con auditoría](adr/0007-persistencia-reportes-en-backend-con-auditoria.md)
 - [ADR 0009: Estrategia de resiliencia IA (fallback + circuit breaker)](adr/0009-resiliencia-ia-orquestador-fallback-circuit-breaker.md)
+- [ADR 0014: Módulo de rúbricas versionadas para plantillas y scoring docente](adr/0014-modulo-rubricas-versionadas.md)

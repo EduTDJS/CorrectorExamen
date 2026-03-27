@@ -14,6 +14,8 @@ reports (snapshot/proyección 1:1 con submissions por report_id)
    ├────< report_versions (N)
    |
    └────< audit_logs (N)
+
+rubrics (plantillas versionadas)
 ```
 
 ## Entidades núcleo
@@ -62,6 +64,17 @@ reports (snapshot/proyección 1:1 con submissions por report_id)
 - Regla de versionado:
   - creación de reporte: genera versión `1` con `diff_json = {}`.
   - cada actualización: inserta versión `n+1` y persiste diff mínimo sobre `calificacionFinal`.
+
+### `rubrics`
+- Plantillas de evaluación reutilizables por materia y grado.
+- Campos mínimos:
+  - `id: string`
+  - `materia: string`
+  - `grado: string`
+  - `criterios[]` (`pregunta`, `descripcion`, `respuestaCorrecta`, `peso`)
+  - `reglasPenalizacionBonificacion` (`penalizacionSinRespuesta`, `bonificacionPorRachaCorrecta`)
+  - `version: number`
+- Endpoints backend: `GET /api/rubricas` y `POST /api/rubricas`.
 
 ## Proyección/snapshot
 

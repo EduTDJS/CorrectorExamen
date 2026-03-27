@@ -36,6 +36,7 @@ Cada ADR debe incluir estas secciones mínimas:
 - [0011 - Estrategia de backup/restore con validación de integridad y restore drill periódico](0011-estrategia-backup-restore-y-restore-drill.md)
 - [0012 - Versionado de reportes con snapshot+diff y cumplimiento editorial del roadmap](0012-versionado-reportes-y-regla-editorial-roadmap.md)
 - [0013 - Dataset inicial determinístico e idempotente para desarrollo](0013-seed-dataset-deterministico.md)
+- [0014 - Módulo de rúbricas versionadas para plantillas y scoring docente](0014-modulo-rubricas-versionadas.md)
 
 ## Nota de nomenclatura
 

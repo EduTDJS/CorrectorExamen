@@ -193,6 +193,53 @@ describe('backend/server API', () => {
     }
   });
 
+  it('GET /api/rubricas lista plantillas disponibles', async () => {
+    const app = await loadServer({ provider: 'openai' });
+
+    try {
+      const result = await apiRequest({ baseUrl: app.baseUrl, path: '/api/rubricas' });
+      expect(result.status).toBe(200);
+      expect(Array.isArray(result.json.data)).toBe(true);
+      expect(result.json.data[0]).toMatchObject({
+        id: 'rubrica-matematicas-6to-v1',
+        materia: 'Matemáticas'
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('POST /api/rubricas crea una rúbrica con el contrato mínimo', async () => {
+    const app = await loadServer({ provider: 'openai' });
+
+    try {
+      const result = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/rubricas',
+        method: 'POST',
+        body: {
+          materia: 'Historia',
+          grado: '3ro secundaria',
+          criterios: [{ pregunta: 1, descripcion: 'Cronología', respuestaCorrecta: 'C', peso: 1 }],
+          reglasPenalizacionBonificacion: {
+            penalizacionSinRespuesta: 0.1,
+            bonificacionPorRachaCorrecta: { minimoConsecutivas: 2, puntosExtra: 0.5 }
+          },
+          version: 1
+        }
+      });
+
+      expect(result.status).toBe(201);
+      expect(result.json.data).toMatchObject({
+        materia: 'Historia',
+        grado: '3ro secundaria',
+        version: 1
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
   it('POST /api/calificacion/sugerir normaliza contrato para OpenAI', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, {
       choices: [{ message: { content: '{"puntuacion_sugerida": 88, "justificacion_breve": "Correcto"}' } }]
