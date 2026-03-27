@@ -1,3 +1,5 @@
+import { normalizeRole } from './auth.js';
+
 const AUTHZ_ERRORS = {
   FORBIDDEN: 'auth_forbidden'
 };
@@ -20,7 +22,7 @@ const PERMISSIONS_BY_ROLE = {
 };
 
 const authorize = (req, action) => {
-  const role = String(req.user?.role || '').trim();
+  const role = normalizeRole(req.user?.role);
   const permissions = PERMISSIONS_BY_ROLE[role];
 
   if (!permissions || !permissions.has(action)) {

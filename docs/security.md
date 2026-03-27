@@ -42,6 +42,12 @@ Además, para trazabilidad y control de expiración de sesión:
   - campos obligatorios presentes,
   - token no expirado.
 
+Normalización aplicada al `role` del payload (`v1`):
+
+- Se aplica `trim` + minúsculas.
+- Alias de negocio aceptado: `administrador` → `admin`.
+- El rol normalizado es el que usa backend para RBAC y rate limiting.
+
 Si falta o es inválido, backend responde `401` con `error.code = "auth_unauthorized"`.
 
 
@@ -78,6 +84,8 @@ Matriz de permisos final (marzo 2026):
 - `coordinador`: `correct_exam`, `export_report`, `view_history`, `delete_report` (supervisión académica, exportación y eliminación en su tenant).
 - `corrector`: `correct_exam`, `view_history` (corrección operativa sin alta de reportes).
 - `auditor`: `view_history` (lectura para revisión y cumplimiento).
+
+Alias RBAC aceptado para compatibilidad: `administrador` (en token) se normaliza a `admin`.
 
 Si el usuario está autenticado pero sin permiso, backend responde `403` con `error.code = "auth_forbidden"`.
 
