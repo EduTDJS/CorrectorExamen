@@ -48,7 +48,7 @@ Si falta o es inválido, backend responde `401` con `error.code = "auth_unauthor
 ### Flujo de sesión cliente → backend
 
 1. El frontend obtiene/actualiza el token de sesión desde una única fuente (`sessionService`).
-2. `buildAuthHeaders` adjunta `Authorization: Bearer <token>` para llamadas críticas: `POST /api/calificacion/sugerir`, `GET/POST /api/reportes`, `GET /api/reportes/:id` y `GET /api/reportes/:id/export`.
+2. `buildAuthHeaders` adjunta `Authorization: Bearer <token>` para llamadas críticas: `POST /api/calificacion/sugerir`, `GET/POST /api/reportes`, `GET /api/reportes/:id`, `GET /api/reportes/:id/export` y endpoints de versionado (`GET /api/reportes/:id/versiones`, `GET /api/reportes/:id/versiones/:version`).
 3. Si backend responde `401`, la UI muestra mensaje explícito de sesión expirada/inválida.
 4. Si backend responde `403`, la UI muestra mensaje explícito de permiso insuficiente según RBAC.
 
@@ -56,7 +56,7 @@ Si falta o es inválido, backend responde `401` con `error.code = "auth_unauthor
 
 - Cada `reporte` persistido incluye `ownership` con `tenantId`, `userId` y `role`, derivados de `req.user`.
 - `GET /api/reportes` aplica aislamiento por `tenantId` y, para roles con alcance personal (`docente`, `corrector`), también por `userId`.
-- `GET /api/reportes/:id` y `GET /api/reportes/:id/export` validan ownership:
+- `GET /api/reportes/:id`, `GET /api/reportes/:id/export`, `GET /api/reportes/:id/versiones` y `GET /api/reportes/:id/versiones/:version` validan ownership:
   - si el recurso existe pero pertenece a otro tenant/usuario, backend responde `403` (`auth_forbidden`);
   - si no existe, responde `404`.
 - La auditoría en `audit_logs.metadata_json` registra `tenantId` y `sessionId` en `report_created` / `report_updated` para trazabilidad entre sesión y recurso.
@@ -68,7 +68,7 @@ Acciones críticas y mapeo de endpoints:
 - `create_exam` → `POST /api/reportes`
 - `correct_exam` → `POST /api/calificacion/sugerir`
 - `export_report` → `GET /api/reportes/:id/export`
-- `view_history` → `GET /api/reportes`, `GET /api/reportes/:id`
+- `view_history` → `GET /api/reportes`, `GET /api/reportes/:id`, `GET /api/reportes/:id/versiones`, `GET /api/reportes/:id/versiones/:version`
 - `delete_report` → `DELETE /api/reportes/:id`
 
 Matriz de permisos final (marzo 2026):
@@ -107,6 +107,7 @@ Eventos persistidos en `audit_logs`:
 - `report_updated`: actualización general de reporte.
 - `final_grade_changed`: cambio explícito de decisión final docente (`calificacionFinal`).
 - `report_deleted`: eliminación segura del reporte.
+- `report_versions`: registro inmutable de snapshots por versión, incluyendo `actor` y `diff_json` de `calificacionFinal`.
 
 Eventos de trazabilidad operacional en logs JSON (`stdout`):
 

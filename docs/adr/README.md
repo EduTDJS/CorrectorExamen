@@ -34,6 +34,7 @@ Cada ADR debe incluir estas secciones mínimas:
 - [0009 - Resiliencia IA con orquestador, fallback y circuit breaker](0009-resiliencia-ia-orquestador-fallback-circuit-breaker.md)
 - [0010 - Matriz RBAC final y auditoría de denegaciones por recurso](0010-rbac-matriz-final-y-auditoria-de-denegaciones.md)
 - [0011 - Estrategia de backup/restore con validación de integridad y restore drill periódico](0011-estrategia-backup-restore-y-restore-drill.md)
+- [0012 - Versionado de reportes con snapshot+diff y cumplimiento editorial del roadmap](0012-versionado-reportes-y-regla-editorial-roadmap.md)
 
 ## Nota de nomenclatura
 

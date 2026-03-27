@@ -76,6 +76,44 @@ const hasFinalGradeChanged = (current = {}, incoming = {}) => {
   });
 };
 
+const extractComparableFinalGrade = (payload = {}) => {
+  const grade = payload?.calificacionFinal || {};
+  return {
+    notaSobre100: Number(grade?.notaSobre100),
+    letra: String(grade?.letra || ''),
+    justificacionDocente: String(grade?.justificacionDocente || '')
+  };
+};
+
+const computeReportVersionDiff = (previousPayload = {}, nextPayload = {}) => {
+  const previousFinalGrade = extractComparableFinalGrade(previousPayload);
+  const nextFinalGrade = extractComparableFinalGrade(nextPayload);
+  const finalGradeDiff = {};
+
+  if (previousFinalGrade.notaSobre100 !== nextFinalGrade.notaSobre100) {
+    finalGradeDiff.notaSobre100 = {
+      from: previousFinalGrade.notaSobre100,
+      to: nextFinalGrade.notaSobre100
+    };
+  }
+  if (previousFinalGrade.letra !== nextFinalGrade.letra) {
+    finalGradeDiff.letra = {
+      from: previousFinalGrade.letra,
+      to: nextFinalGrade.letra
+    };
+  }
+  if (previousFinalGrade.justificacionDocente !== nextFinalGrade.justificacionDocente) {
+    finalGradeDiff.justificacionDocente = {
+      from: previousFinalGrade.justificacionDocente,
+      to: nextFinalGrade.justificacionDocente
+    };
+  }
+
+  return Object.keys(finalGradeDiff).length > 0
+    ? { calificacionFinal: finalGradeDiff }
+    : {};
+};
+
 const stableSlug = (value, fallback = 'general') => {
   const normalized = String(value || '')
     .normalize('NFD')
@@ -221,7 +259,8 @@ const persistReport = async (reportPayload, {
   ownership,
   auditMetadata,
   createdAt,
-  updatedAt
+  updatedAt,
+  previousPayload = null
 }) => {
   const storage = await getReportsStorageAdapter();
   const ownershipMetadata = toOwnership(ownership);
@@ -250,7 +289,14 @@ const persistReport = async (reportPayload, {
         actor,
         metadata: { source: 'api', id: reportId, ...extraAction.metadata }
       })) : [])
-    ]
+    ],
+    {
+      reportId,
+      snapshotJson: projection.payload_json,
+      diffJson: JSON.stringify(computeReportVersionDiff(previousPayload, payloadWithOwnership)),
+      actor,
+      createdAt: updatedAt
+    }
   );
 
   return fromStorageRow({ ...projection, ...normalized.submission, ...normalized.exam, ...normalized.group, ...normalized.student, ...normalized.grade });
@@ -307,7 +353,8 @@ export const updateReport = async (reportId, reportPayload, {
         : []
     },
     createdAt: currentPayload.creadoEn || current.created_at,
-    updatedAt: nowIso()
+    updatedAt: nowIso(),
+    previousPayload: currentPayload
   });
 };
 
@@ -359,4 +406,26 @@ export const listAuditLogs = async () => {
     created_at: row.created_at,
     metadata: parseJson(row.metadata_json, {})
   }));
+};
+
+const fromVersionRow = (row) => ({
+  id: row.id,
+  reportId: row.report_id,
+  versionNumber: Number(row.version_number),
+  snapshot: parseJson(row.snapshot_json, {}),
+  diff: parseJson(row.diff_json, {}),
+  actor: row.actor,
+  createdAt: row.created_at
+});
+
+export const listReportVersions = async (reportId) => {
+  const storage = await getReportsStorageAdapter();
+  const rows = await storage.listReportVersions(reportId);
+  return rows.map(fromVersionRow);
+};
+
+export const getReportVersion = async (reportId, versionNumber) => {
+  const storage = await getReportsStorageAdapter();
+  const row = await storage.getReportVersion(reportId, versionNumber);
+  return row ? fromVersionRow(row) : null;
 };

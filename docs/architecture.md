@@ -45,6 +45,7 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
 │ Backend Node (backend/server.js)                                          │
 │ POST /api/calificacion/sugerir -> providerOrchestrator (primario/sec.)    │
 │ POST /api/reportes + GET /api/reportes + GET /api/reportes/:id            │
+│ GET /api/reportes/:id/versiones (+ /:version)                             │
 │ Resiliencia: fallback + reintentos + circuit breaker por proveedor         │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -99,9 +100,11 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
 3. `backend/server.js` recibe `POST /api/reportes`, valida contrato mínimo y resuelve contexto de actor/tenant.
 4. `reportRepository` transforma el payload a modelo normalizado (`schools`, `groups`, `exams`, `students`, `submissions`, `grades`) y mantiene snapshot `reports` para compatibilidad.
 5. `database` ejecuta una sola transacción SQL (`BEGIN IMMEDIATE ... COMMIT`) con orden: upsert entidades núcleo -> upsert `reports` -> inserción en `audit_logs`.
-6. Si hay error, se aplica `ROLLBACK` y la API no expone estado parcial.
-7. En lectura (`GET /api/reportes`, `GET /api/reportes/:id`), el backend prioriza datos normalizados y usa `payload_json` como respaldo de compatibilidad.
-8. El frontend refresca estado local en memoria; solo si backend no está disponible, `useReportes` activa fallback controlado en `localStorage`.
+6. En la misma transacción, se inserta snapshot versionado en `report_versions` con `version_number` incremental por `report_id`.
+7. En lectura, `GET /api/reportes/:id/versiones` y `GET /api/reportes/:id/versiones/:version` exponen historial de versiones sin romper el aislamiento tenant/usuario.
+8. Si hay error, se aplica `ROLLBACK` y la API no expone estado parcial.
+9. En lectura (`GET /api/reportes`, `GET /api/reportes/:id`), el backend prioriza datos normalizados y usa `payload_json` como respaldo de compatibilidad.
+10. El frontend refresca estado local en memoria; solo si backend no está disponible, `useReportes` activa fallback controlado en `localStorage`.
 
 ### Política de persistencia frontend (backend-first)
 

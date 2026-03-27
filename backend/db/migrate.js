@@ -140,6 +140,43 @@ const MIGRATIONS = [
         r.updated_at
       FROM reports r;
     `
+  },
+  {
+    version: 4,
+    name: 'report_versions_history',
+    sql: `
+      CREATE TABLE IF NOT EXISTS report_versions (
+        id TEXT PRIMARY KEY,
+        report_id TEXT NOT NULL,
+        version_number INTEGER NOT NULL,
+        snapshot_json TEXT NOT NULL,
+        diff_json TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE,
+        UNIQUE (report_id, version_number)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_report_versions_report_version
+      ON report_versions(report_id, version_number DESC);
+
+      CREATE INDEX IF NOT EXISTS idx_report_versions_report_created_at
+      ON report_versions(report_id, created_at DESC);
+
+      INSERT INTO report_versions (id, report_id, version_number, snapshot_json, diff_json, actor, created_at)
+      SELECT
+        'rver_' || lower(hex(randomblob(16))),
+        r.id,
+        1,
+        r.payload_json,
+        '{}',
+        'system_backfill_v4',
+        COALESCE(NULLIF(r.updated_at, ''), r.created_at, datetime('now'))
+      FROM reports r
+      WHERE NOT EXISTS (
+        SELECT 1 FROM report_versions rv WHERE rv.report_id = r.id
+      );
+    `
   }
 ];
 

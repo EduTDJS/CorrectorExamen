@@ -381,6 +381,112 @@ describe('backend/server API', () => {
     }
   });
 
+  it('versiona reportes al actualizar y persiste diff mínimo de calificacionFinal', async () => {
+    const app = await loadServer({ provider: 'openai' });
+    const docenteToken = buildSessionToken({ sub: 'u-docente-version', role: 'docente', tenantId: 'tenant-v', institution: 'inst-v' });
+
+    try {
+      const created = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        authToken: docenteToken,
+        headers: { 'x-actor': 'qa_version_tester' },
+        body: {
+          examen: { materia: 'Contabilidad', grupo: 'A', fecha: '2026-03-20', totalPreguntas: 10, claveRespuestas: 'ABCD' },
+          estudiante: { nombre: 'Ana', matricula: 'A1' },
+          respuestas: { lista: ['A', 'B'], texto: 'AB' },
+          puntuacionPorPregunta: [],
+          justificacionesIA: [],
+          calificacionFinal: { notaSobre100: 80, letra: 'B', justificacionDocente: 'Bien' }
+        }
+      });
+      expect(created.status).toBe(201);
+
+      const updated = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        authToken: docenteToken,
+        headers: { 'x-actor': 'qa_version_tester' },
+        body: {
+          ...created.json,
+          calificacionFinal: { notaSobre100: 92, letra: 'A', justificacionDocente: 'Excelente' }
+        }
+      });
+      expect(updated.status).toBe(200);
+
+      const versions = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/reportes/${created.json.id}/versiones`,
+        authToken: docenteToken
+      });
+      expect(versions.status).toBe(200);
+      expect(versions.json.data).toHaveLength(2);
+      expect(versions.json.data.map((version) => version.versionNumber)).toEqual([2, 1]);
+
+      const version2 = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/reportes/${created.json.id}/versiones/2`,
+        authToken: docenteToken
+      });
+      expect(version2.status).toBe(200);
+      expect(version2.json.diff).toMatchObject({
+        calificacionFinal: {
+          notaSobre100: { from: 80, to: 92 },
+          letra: { from: 'B', to: 'A' },
+          justificacionDocente: { from: 'Bien', to: 'Excelente' }
+        }
+      });
+      expect(version2.json.actor).toBe('qa_version_tester');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('aísla consultas de versiones por tenant y usuario', async () => {
+    const app = await loadServer({ provider: 'openai' });
+    const ownerToken = buildSessionToken({ sub: 'u-doc-owner', role: 'docente', tenantId: 'tenant-1', institution: 'inst-1' });
+    const sameTenantDifferentTeacher = buildSessionToken({ sub: 'u-doc-other', role: 'docente', tenantId: 'tenant-1', institution: 'inst-1' });
+    const foreignTenantCoordinator = buildSessionToken({ sub: 'u-coord-foreign', role: 'coordinador', tenantId: 'tenant-2', institution: 'inst-2' });
+
+    try {
+      const created = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        authToken: ownerToken,
+        body: {
+          examen: { materia: 'Contabilidad', grupo: 'A', fecha: '2026-03-20', totalPreguntas: 10, claveRespuestas: 'ABCD' },
+          estudiante: { nombre: 'Ana', matricula: 'A1' },
+          respuestas: { lista: ['A', 'B'], texto: 'AB' },
+          puntuacionPorPregunta: [],
+          justificacionesIA: [],
+          calificacionFinal: { notaSobre100: 80, letra: 'B', justificacionDocente: 'Bien' }
+        }
+      });
+      expect(created.status).toBe(201);
+
+      const deniedByUserScope = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/reportes/${created.json.id}/versiones`,
+        authToken: sameTenantDifferentTeacher
+      });
+      expect(deniedByUserScope.status).toBe(403);
+      expect(deniedByUserScope.json.error.code).toBe('auth_forbidden');
+
+      const deniedByTenant = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/reportes/${created.json.id}/versiones/1`,
+        authToken: foreignTenantCoordinator
+      });
+      expect(deniedByTenant.status).toBe(403);
+      expect(deniedByTenant.json.error.code).toBe('auth_forbidden');
+    } finally {
+      await app.close();
+    }
+  });
+
   it('deniega acceso cross-tenant por id y export con 403', async () => {
     const app = await loadServer({ provider: 'openai' });
     const ownerToken = buildSessionToken({ sub: 'u-docente-owner', role: 'docente', tenantId: 'tenant-owner', institution: 'inst-owner' });

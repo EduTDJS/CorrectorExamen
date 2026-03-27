@@ -10,7 +10,19 @@ const shouldUseJsonFallback = () => {
 
 let adapter;
 
-const insertOrUpdateReportGraphSql = ({ report, normalized, auditLogs = [] }) => `
+const insertReportVersionSql = ({ reportId, snapshotJson, diffJson, actor, createdAt }) => `
+  INSERT INTO report_versions (id, report_id, version_number, snapshot_json, diff_json, actor, created_at)
+  SELECT
+    'rver_' || lower(hex(randomblob(16))),
+    ${sqlLiteral(reportId)},
+    COALESCE((SELECT MAX(version_number) + 1 FROM report_versions WHERE report_id = ${sqlLiteral(reportId)}), 1),
+    ${sqlLiteral(snapshotJson)},
+    ${sqlLiteral(diffJson)},
+    ${sqlLiteral(actor)},
+    ${sqlLiteral(createdAt)};
+`;
+
+const insertOrUpdateReportGraphSql = ({ report, normalized, auditLogs = [], reportVersion = null }) => `
   BEGIN IMMEDIATE TRANSACTION;
   INSERT OR REPLACE INTO schools (id, tenant_id, name, created_at, updated_at)
   VALUES (
@@ -91,6 +103,7 @@ const insertOrUpdateReportGraphSql = ({ report, normalized, auditLogs = [] }) =>
     ${sqlLiteral(report.updated_at)},
     ${sqlLiteral(report.payload_json)}
   );
+  ${reportVersion ? insertReportVersionSql(reportVersion) : ''}
   ${auditLogs.map((auditLog) => insertAuditLogSql(auditLog)).join('\n')}
   COMMIT;
 `;
@@ -129,8 +142,13 @@ const createSqlAdapter = async () => {
   return {
     mode: 'sqlite',
     filePath: getDatabasePath(),
-    async upsertReportGraph(reportRecord, normalizedRecord, auditLogs = []) {
-      await client.exec(insertOrUpdateReportGraphSql({ report: reportRecord, normalized: normalizedRecord, auditLogs }));
+    async upsertReportGraph(reportRecord, normalizedRecord, auditLogs = [], reportVersion = null) {
+      await client.exec(insertOrUpdateReportGraphSql({
+        report: reportRecord,
+        normalized: normalizedRecord,
+        auditLogs,
+        reportVersion
+      }));
       return reportRecord;
     },
     async deleteReportGraph(reportId, auditLogs = []) {
@@ -194,6 +212,24 @@ const createSqlAdapter = async () => {
          FROM audit_logs
          ORDER BY created_at DESC;`
       );
+    },
+    async listReportVersions(reportId) {
+      return client.all(
+        `SELECT id, report_id, version_number, snapshot_json, diff_json, actor, created_at
+         FROM report_versions
+         WHERE report_id = ${sqlLiteral(reportId)}
+         ORDER BY version_number DESC;`
+      );
+    },
+    async getReportVersion(reportId, versionNumber) {
+      const row = await client.get(
+        `SELECT id, report_id, version_number, snapshot_json, diff_json, actor, created_at
+         FROM report_versions
+         WHERE report_id = ${sqlLiteral(reportId)}
+           AND version_number = ${sqlLiteral(versionNumber)}
+         LIMIT 1;`
+      );
+      return row || null;
     }
   };
 };

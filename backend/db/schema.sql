@@ -98,6 +98,18 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS report_versions (
+  id TEXT PRIMARY KEY,
+  report_id TEXT NOT NULL,
+  version_number INTEGER NOT NULL,
+  snapshot_json TEXT NOT NULL,
+  diff_json TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (report_id) REFERENCES reports(id) ON DELETE CASCADE,
+  UNIQUE (report_id, version_number)
+);
+
 CREATE INDEX IF NOT EXISTS idx_schools_tenant_id ON schools(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_groups_school_name ON groups(school_id, name);
 CREATE INDEX IF NOT EXISTS idx_exams_group_date ON exams(group_id, exam_date DESC);
@@ -106,3 +118,5 @@ CREATE INDEX IF NOT EXISTS idx_submissions_exam_student ON submissions(exam_id, 
 CREATE INDEX IF NOT EXISTS idx_submissions_report_id ON submissions(report_id);
 CREATE INDEX IF NOT EXISTS idx_reports_created_at ON reports(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_report_created_at ON audit_logs(report_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_report_versions_report_version ON report_versions(report_id, version_number DESC);
+CREATE INDEX IF NOT EXISTS idx_report_versions_report_created_at ON report_versions(report_id, created_at DESC);

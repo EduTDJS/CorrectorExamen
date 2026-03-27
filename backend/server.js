@@ -4,7 +4,9 @@ import {
   createReport,
   getReportById,
   getReportByIdUnscoped,
+  getReportVersion,
   listReports,
+  listReportVersions,
   updateReport,
   deleteReport
 } from './repositories/reportRepository.js';
@@ -620,6 +622,98 @@ const handler = async (req, res) => {
       action: 'export_report',
       resource: '/api/reportes/:id/export'
     });
+    return;
+  }
+
+  const reportVersionsListMatch = req.method === 'GET'
+    ? req.url?.match(/^\/api\/reportes\/([^/]+)\/versiones$/)
+    : null;
+  if (reportVersionsListMatch) {
+    const accessResult = await runProtectedAction({
+      req,
+      res,
+      requestId,
+      action: 'view_history',
+      resource: '/api/reportes/:id/versiones',
+      onAllowed: async () => true
+    });
+    if (!accessResult) {
+      return;
+    }
+
+    const reportId = decodeURIComponent(reportVersionsListMatch[1]);
+    const accessScope = getReportAccessScope(req.user);
+    const scopedReport = await getReportById(reportId, accessScope);
+    if (!scopedReport) {
+      const existing = await getReportByIdUnscoped(reportId);
+      if (existing) {
+        sendForbiddenReportAccess({ req, res, requestId, resource: '/api/reportes/:id/versiones' });
+        return;
+      }
+      sendJson(res, 404, {
+        error: {
+          message: 'Reporte no encontrado.',
+          code: API_ERRORS.NOT_FOUND,
+          requestId
+        }
+      }, { requestId });
+      return;
+    }
+
+    const versions = await listReportVersions(reportId);
+    sendJson(res, 200, { data: versions }, { requestId });
+    return;
+  }
+
+  const reportVersionDetailMatch = req.method === 'GET'
+    ? req.url?.match(/^\/api\/reportes\/([^/]+)\/versiones\/(\d+)$/)
+    : null;
+  if (reportVersionDetailMatch) {
+    const accessResult = await runProtectedAction({
+      req,
+      res,
+      requestId,
+      action: 'view_history',
+      resource: '/api/reportes/:id/versiones/:version',
+      onAllowed: async () => true
+    });
+    if (!accessResult) {
+      return;
+    }
+
+    const reportId = decodeURIComponent(reportVersionDetailMatch[1]);
+    const requestedVersion = Number(reportVersionDetailMatch[2]);
+    const accessScope = getReportAccessScope(req.user);
+    const scopedReport = await getReportById(reportId, accessScope);
+    if (!scopedReport) {
+      const existing = await getReportByIdUnscoped(reportId);
+      if (existing) {
+        sendForbiddenReportAccess({ req, res, requestId, resource: '/api/reportes/:id/versiones/:version' });
+        return;
+      }
+      sendJson(res, 404, {
+        error: {
+          message: 'Reporte no encontrado.',
+          code: API_ERRORS.NOT_FOUND,
+          requestId
+        }
+      }, { requestId });
+      return;
+    }
+
+    const version = await getReportVersion(reportId, requestedVersion);
+    if (!version) {
+      sendJson(res, 404, {
+        error: {
+          message: 'Versión no encontrada.',
+          code: API_ERRORS.NOT_FOUND,
+          requestId
+        }
+      }, { requestId });
+      return;
+    }
+
+    sendJson(res, 200, version, { requestId });
     return;
   }
 
