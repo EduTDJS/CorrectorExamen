@@ -177,6 +177,40 @@ const MIGRATIONS = [
         SELECT 1 FROM report_versions rv WHERE rv.report_id = r.id
       );
     `
+  },
+  {
+    version: 5,
+    name: 'rubrics_versioned_persistence',
+    sql: `
+      CREATE TABLE IF NOT EXISTS rubrics (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL DEFAULT 'global',
+        materia TEXT NOT NULL,
+        grado TEXT NOT NULL,
+        current_version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (tenant_id, materia, grado),
+        CHECK (current_version >= 1)
+      );
+
+      CREATE TABLE IF NOT EXISTS rubric_versions (
+        id TEXT PRIMARY KEY,
+        rubric_id TEXT NOT NULL,
+        version_number INTEGER NOT NULL,
+        criterios_json TEXT NOT NULL,
+        reglas_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        FOREIGN KEY (rubric_id) REFERENCES rubrics(id) ON DELETE CASCADE,
+        UNIQUE (rubric_id, version_number),
+        CHECK (version_number >= 1)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_rubrics_lookup ON rubrics(tenant_id, materia, grado);
+      CREATE INDEX IF NOT EXISTS idx_rubric_versions_rubric_version
+      ON rubric_versions(rubric_id, version_number DESC);
+    `
   }
 ];
 

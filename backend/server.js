@@ -678,7 +678,9 @@ const handler = async (req, res) => {
     return;
   }
 
-  if (req.method === 'GET' && req.url === '/api/rubricas') {
+  const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+
+  if (req.method === 'GET' && parsedUrl.pathname === '/api/rubricas') {
     const accessResult = await runProtectedAction({
       req,
       res,
@@ -692,7 +694,18 @@ const handler = async (req, res) => {
     }
 
     try {
-      const rubricas = await listRubrics();
+      const versionParam = Number(parsedUrl.searchParams.get('version'));
+      const vigenteParam = parsedUrl.searchParams.get('vigente');
+      const includeHistory = String(parsedUrl.searchParams.get('historial') || '').toLowerCase() === 'true';
+      const rubricas = await listRubrics({
+        tenantId: req.user?.tenantId || req.user?.institution,
+        materia: parsedUrl.searchParams.get('materia') || undefined,
+        grado: parsedUrl.searchParams.get('grado') || undefined,
+        rubricId: parsedUrl.searchParams.get('rubricId') || undefined,
+        version: Number.isInteger(versionParam) && versionParam > 0 ? versionParam : undefined,
+        vigente: vigenteParam === null ? true : String(vigenteParam).toLowerCase() !== 'false',
+        includeHistory
+      });
       sendJson(res, 200, { data: rubricas }, { requestId });
     } catch (error) {
       sendJson(res, 500, {
@@ -706,7 +719,7 @@ const handler = async (req, res) => {
     return;
   }
 
-  if (req.method === 'POST' && req.url === '/api/rubricas') {
+  if (req.method === 'POST' && parsedUrl.pathname === '/api/rubricas') {
     const accessResult = await runProtectedAction({
       req,
       res,
@@ -721,7 +734,10 @@ const handler = async (req, res) => {
 
     try {
       const payload = await parseBody(req);
-      const rubrica = await createRubric(payload);
+      const rubrica = await createRubric(payload, {
+        tenantId: req.user?.tenantId || req.user?.institution,
+        actor: req.user?.userId || req.user?.sub || 'api_user'
+      });
       sendJson(res, 201, { data: rubrica }, { requestId });
     } catch (error) {
       sendJson(res, 400, {
