@@ -490,14 +490,53 @@ describe('backend/server API', () => {
 
       expect(auditLogs).toHaveLength(3);
       expect(auditLogs.map((log) => log.action)).toEqual(['report_created', 'report_updated', 'final_grade_changed']);
-      expect(auditLogs[0].actor).toBe('qa_tester');
+      expect(auditLogs[0].actor).toBe('u-docente-1');
       expect(JSON.parse(auditLogs[0].metadata_json)).toMatchObject({
         tenantId: 'Instituto Central',
-        sessionId: 'session-123'
+        sessionId: 'session-123',
+        untrustedActorHint: 'qa_tester'
       });
       expect(JSON.parse(auditLogs[2].metadata_json)).toMatchObject({
         previousFinalGrade: expect.objectContaining({ notaSobre100: 80, letra: 'B' }),
         nextFinalGrade: expect.objectContaining({ notaSobre100: 91, letra: 'A' })
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+
+  it('ignora x-actor en actor auditado y usa el usuario autenticado', async () => {
+    const app = await loadServer({ provider: 'openai' });
+    const authToken = buildSessionToken({ sub: 'u-docente-auth', role: 'docente', tenantId: 'tenant-auth', institution: 'tenant-auth' });
+
+    try {
+      const created = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        authToken,
+        headers: { 'x-actor': 'spoofed_header_actor' },
+        body: {
+          examen: { materia: 'Contabilidad', grupo: 'A', fecha: '2026-03-20', totalPreguntas: 10, claveRespuestas: 'ABCD' },
+          estudiante: { nombre: 'Ana', matricula: 'A1' },
+          respuestas: { lista: ['A', 'B'], texto: 'AB' },
+          puntuacionPorPregunta: [],
+          justificacionesIA: [],
+          calificacionFinal: { notaSobre100: 80, letra: 'B', justificacionDocente: 'Bien' }
+        }
+      });
+      expect(created.status).toBe(201);
+
+      const rawLogs = execFileSync(
+        'sqlite3',
+        ['-json', process.env.REPORTS_DB_FILE, "SELECT action, actor, metadata_json FROM audit_logs WHERE action = 'report_created' ORDER BY created_at DESC LIMIT 1;"],
+        { encoding: 'utf-8' }
+      );
+      const [createdAudit] = JSON.parse(rawLogs);
+      expect(createdAudit.actor).toBe('u-docente-auth');
+      expect(JSON.parse(createdAudit.metadata_json)).toMatchObject({
+        untrustedActorHint: 'spoofed_header_actor'
       });
     } finally {
       await app.close();
@@ -601,7 +640,7 @@ describe('backend/server API', () => {
           justificacionDocente: { from: 'Bien', to: 'Excelente' }
         }
       });
-      expect(version2.json.actor).toBe('qa_version_tester');
+      expect(version2.json.actor).toBe('u-docente-version');
     } finally {
       await app.close();
     }
@@ -1059,11 +1098,12 @@ describe('backend/server API', () => {
       const auditLogs = JSON.parse(rawLogs);
       expect(auditLogs.map((log) => log.action)).toContain('report_deleted');
       const deletedAudit = auditLogs.find((log) => log.action === 'report_deleted');
-      expect(deletedAudit.actor).toBe('qa_delete_tester');
+      expect(deletedAudit.actor).toBe('u-docente-1');
       expect(JSON.parse(deletedAudit.metadata_json)).toMatchObject({
         tenantId: 'tenant-1',
         userId: 'u-docente-1',
-        resource: '/api/reportes/:id'
+        resource: '/api/reportes/:id',
+        untrustedActorHint: 'qa_delete_tester'
       });
     } finally {
       await app.close();
