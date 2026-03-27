@@ -41,17 +41,18 @@ function StepRevision({
       )}
 
       <table className="tabla-respuestas">
+        <caption>Desglose de revisión por pregunta</caption>
         <thead>
           <tr>
-            <th>Pregunta</th>
-            <th>Correcta</th>
-            <th>Estudiante</th>
-            <th>Estado</th>
-            <th>Confianza OCR</th>
-            <th>Fuente OCR</th>
-            <th>Puntaje</th>
-            <th>Override docente</th>
-            <th>Razonamiento (expandible)</th>
+            <th scope="col">Pregunta</th>
+            <th scope="col">Correcta</th>
+            <th scope="col">Estudiante</th>
+            <th scope="col">Estado</th>
+            <th scope="col">Confianza OCR</th>
+            <th scope="col">Fuente OCR</th>
+            <th scope="col">Puntaje</th>
+            <th scope="col">Override docente</th>
+            <th scope="col">Razonamiento (expandible)</th>
           </tr>
         </thead>
         <tbody>

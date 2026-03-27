@@ -86,6 +86,15 @@ button {
   font-size: 0.95rem;
 }
 
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #1d4ed8;
+  outline-offset: 2px;
+}
+
 button {
   cursor: pointer;
   background: #1d4ed8;
@@ -159,6 +168,12 @@ button[disabled] {
   text-align: left;
   border-bottom: 1px solid #e5e7eb;
   padding: 0.45rem;
+}
+
+.tabla-respuestas caption {
+  text-align: left;
+  font-weight: 600;
+  padding: 0.4rem 0;
 }
 
 .ocr-texto {

@@ -64,7 +64,16 @@ function StepIngresoRespuestas({
 
             {importacionEstado.filas.length > 0 && (
               <table className="tabla-respuestas">
-                <thead><tr><th>Fila</th><th>Matrícula</th><th>Nombre</th><th>Respuestas</th><th /></tr></thead>
+                <caption>Vista previa de filas importadas</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Fila</th>
+                    <th scope="col">Matrícula</th>
+                    <th scope="col">Nombre</th>
+                    <th scope="col">Respuestas</th>
+                    <th scope="col">Acción</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {importacionEstado.filas.slice(0, 15).map((fila) => (
                     <tr key={`import-row-${fila.fila}`}>
@@ -72,7 +81,11 @@ function StepIngresoRespuestas({
                       <td>{fila.estudianteMatricula}</td>
                       <td>{fila.estudianteNombre}</td>
                       <td>{fila.respuestasTexto}</td>
-                      <td><button type="button" onClick={() => onAplicarFilaImportada(fila)}>Cargar en formulario</button></td>
+                      <td>
+                        <button type="button" onClick={() => onAplicarFilaImportada(fila)} aria-label={`Cargar fila ${fila.fila} de ${fila.estudianteNombre} en el formulario`}>
+                          Cargar en formulario
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -123,7 +136,15 @@ function StepIngresoRespuestas({
         <h3>Respuestas extraídas / editables</h3>
         <p className="detalle">Priorice revisar primero las filas resaltadas: tienen confianza OCR menor a {umbralBajaConfianza}%.</p>
         <table className="tabla-respuestas">
-          <thead><tr><th>Pregunta</th><th>Respuesta</th><th>Confianza OCR</th><th>Fuente</th></tr></thead>
+          <caption>Respuestas extraídas y edición manual</caption>
+          <thead>
+            <tr>
+              <th scope="col">Pregunta</th>
+              <th scope="col">Respuesta</th>
+              <th scope="col">Confianza OCR</th>
+              <th scope="col">Fuente</th>
+            </tr>
+          </thead>
           <tbody>
             {Array.from({ length: totalFilasTabla }, (_, indice) => {
               const respuestaData = respuestasLista[indice] || {};
@@ -134,7 +155,11 @@ function StepIngresoRespuestas({
                 <tr key={`pregunta-${indice + 1}`} className={bajaConfianza ? 'fila-baja-confianza' : ''}>
                   <td>{indice + 1}</td>
                   <td>
-                    <select value={obtenerRespuestaTexto(respuestaData) || ''} onChange={(e) => actualizarRespuesta(indice, e.target.value)}>
+                    <select
+                      aria-label={`Respuesta de la pregunta ${indice + 1}`}
+                      value={obtenerRespuestaTexto(respuestaData) || ''}
+                      onChange={(e) => actualizarRespuesta(indice, e.target.value)}
+                    >
                       <option value="">Sin marcar</option>
                       {letrasValidas.map((letra) => (<option key={letra} value={letra}>{letra}</option>))}
                     </select>
