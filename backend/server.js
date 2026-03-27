@@ -178,6 +178,103 @@ class ApiError extends Error {
 }
 
 const requestBuckets = new Map();
+let rateLimitCleanupTimer = null;
+let lastBucketCountLogAt = 0;
+
+const cleanupExpiredBuckets = (buckets, now = Date.now()) => {
+  let removedCount = 0;
+  for (const [key, bucket] of buckets.entries()) {
+    if (Number(bucket?.resetAt || 0) < now) {
+      buckets.delete(key);
+      removedCount += 1;
+    }
+  }
+  return removedCount;
+};
+
+const enforceBucketCapacity = (buckets, maxBuckets) => {
+  if (buckets.size <= maxBuckets) {
+    return 0;
+  }
+
+  let evicted = 0;
+  while (buckets.size > maxBuckets) {
+    let oldestKey = null;
+    let oldestSeenAt = Number.POSITIVE_INFINITY;
+    let oldestResetAt = Number.POSITIVE_INFINITY;
+
+    for (const [key, bucket] of buckets.entries()) {
+      const lastSeenAt = Number(bucket?.lastSeenAt || 0);
+      const resetAt = Number(bucket?.resetAt || 0);
+
+      if (lastSeenAt < oldestSeenAt || (lastSeenAt === oldestSeenAt && resetAt < oldestResetAt)) {
+        oldestSeenAt = lastSeenAt;
+        oldestResetAt = resetAt;
+        oldestKey = key;
+      }
+    }
+
+    if (!oldestKey) {
+      break;
+    }
+    buckets.delete(oldestKey);
+    evicted += 1;
+  }
+
+  return evicted;
+};
+
+const emitBucketCountMetric = ({ requestId, method, path, reason, force = false, now = Date.now() }) => {
+  if (!force && now - lastBucketCountLogAt < RATE_LIMIT_CONFIG.bucketCountLogIntervalMs) {
+    return;
+  }
+  lastBucketCountLogAt = now;
+  logEvent({
+    requestId,
+    event: 'rate_limit_bucket_count',
+    method: method || 'SYSTEM',
+    path: path || 'rate_limit',
+    metrics: {
+      rate_limit_bucket_count: requestBuckets.size,
+      reason
+    }
+  });
+};
+
+const runBucketMaintenance = ({ now = Date.now(), requestId, method, path, reason }) => {
+  const removedExpired = cleanupExpiredBuckets(requestBuckets, now);
+  const evicted = enforceBucketCapacity(requestBuckets, RATE_LIMIT_CONFIG.maxBuckets);
+  const mustForceLog = removedExpired > 0 || evicted > 0;
+  emitBucketCountMetric({
+    requestId,
+    method,
+    path,
+    reason,
+    force: mustForceLog,
+    now
+  });
+
+  return { removedExpired, evicted };
+};
+
+const startRateLimitJanitor = () => {
+  if (rateLimitCleanupTimer) {
+    return;
+  }
+  rateLimitCleanupTimer = setInterval(() => {
+    runBucketMaintenance({ reason: 'periodic_cleanup' });
+  }, RATE_LIMIT_CONFIG.cleanupIntervalMs);
+  if (typeof rateLimitCleanupTimer.unref === 'function') {
+    rateLimitCleanupTimer.unref();
+  }
+};
+
+const stopRateLimitJanitor = () => {
+  if (rateLimitCleanupTimer) {
+    clearInterval(rateLimitCleanupTimer);
+    rateLimitCleanupTimer = null;
+  }
+};
 
 const getClientIp = (req) => {
   const forwardedFor = req.headers['x-forwarded-for'];
@@ -234,15 +331,18 @@ const assertInternalToken = (req) => {
 
 const assertRateLimit = ({ req, requestId, method, path }) => {
   const now = Date.now();
+  runBucketMaintenance({ now, requestId, method, path, reason: 'opportunistic_assert' });
   const key = getRateLimitIdentifier(req);
   const { maxRequests, windowMs, nearThresholdRatio } = getRateLimitPolicy(req.user?.role);
   let bucket = requestBuckets.get(key);
 
   if (!bucket || now >= bucket.resetAt) {
-    bucket = { count: 0, resetAt: now + windowMs };
+    bucket = { count: 0, resetAt: now + windowMs, lastSeenAt: now };
     requestBuckets.set(key, bucket);
+    runBucketMaintenance({ now, requestId, method, path, reason: 'after_bucket_create' });
   }
 
+  bucket.lastSeenAt = now;
   bucket.count += 1;
 
   const ratio = bucket.count / maxRequests;
@@ -905,6 +1005,8 @@ const handler = async (req, res) => {
 const server = http.createServer((req, res) => {
   handler(req, res);
 });
+server.on('close', stopRateLimitJanitor);
+startRateLimitJanitor();
 
 if (process.env.NODE_ENV !== 'test') {
   server.listen(PORT, () => {
@@ -913,4 +1015,10 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
-export { server, handler, getRateLimitIdentifier };
+export {
+  server,
+  handler,
+  getRateLimitIdentifier,
+  cleanupExpiredBuckets,
+  enforceBucketCapacity
+};
