@@ -6,8 +6,10 @@
   "scripts": {
     "build": "vite build",
     "db:backup": "node backend/db/backup-dump.js",
+    "db:migrate": "node backend/db/runMigrations.js",
     "db:restore": "node backend/db/restore-dump.js",
     "db:restore:drill": "node backend/db/restore-drill.js",
+    "db:seed": "node backend/db/seed.js",
     "dev": "vite",
     "dev:api": "node backend/server.js",
     "format": "prettier --write .",

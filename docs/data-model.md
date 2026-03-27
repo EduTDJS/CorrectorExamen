@@ -92,6 +92,31 @@ El backend aplica migraciones incrementales con control de versión en `schema_m
 
 Las migraciones viven en `backend/db/migrate.js`, y `backend/db/schema.sql` representa el estado consolidado esperado al final.
 
+## Seed de datos mínimo (determinístico)
+
+Se incluye `backend/db/seed.js` para poblar un dataset mínimo reproducible sobre:
+
+- `schools`
+- `groups`
+- `exams`
+- `students`
+- `submissions`
+- `grades`
+- `reports`
+- `audit_logs`
+
+Características del seed:
+
+- IDs con prefijo `seed_` para aislamiento operativo.
+- Timestamps fijos y datos estables para pruebas manuales.
+- Ejecución **idempotente**: limpia registros seed previos y reinserta el dataset completo.
+- Validación rápida con conteos esperados por tabla (falla si una tabla queda incompleta).
+
+Orden recomendado:
+
+1. `npm run db:migrate`
+2. `npm run db:seed`
+
 ## Garantía transaccional
 
 Cada operación de creación/actualización de reportes ejecuta en una misma transacción SQL:

@@ -26,6 +26,8 @@ Consulta la guía de contribución en [CONTRIBUTING.md](CONTRIBUTING.md).
 - `npm run dev` ejecuta el frontend (Vite).
 - `npm run dev:api` ejecuta el backend local (`backend/server.js`).
 - `npm run build` construye la versión de producción.
+- `npm run db:migrate` aplica migraciones de base de datos (`backend/db/runMigrations.js`).
+- `npm run db:seed` carga un dataset mínimo determinístico e idempotente para desarrollo (`backend/db/seed.js`).
 - `npm run preview` previsualiza el build.
 - `npm run lint` valida reglas de ESLint para React + Vite.
 - `npm run test` ejecuta la suite de pruebas con Vitest (sin cobertura, útil para iteración local).
@@ -34,6 +36,15 @@ Consulta la guía de contribución en [CONTRIBUTING.md](CONTRIBUTING.md).
 - `npm run format` aplica formateo con Prettier.
 - `npm run test:e2e` ejecuta pruebas end-to-end con Playwright sobre build local.
 - `npm run test:e2e:ui` abre el runner UI de Playwright para depuración local.
+
+## Bootstrap de base de datos local
+
+Para preparar rápidamente un entorno con datos de ejemplo reproducibles:
+
+1. `npm run db:migrate`
+2. `npm run db:seed`
+
+El seed carga un dataset mínimo sobre `schools`, `groups`, `exams`, `students`, `submissions`, `grades`, `reports` y `audit_logs`, usando IDs `seed_*` y validación por conteos esperados para detectar cargas incompletas.
 
 ## Calidad local y CI
 
