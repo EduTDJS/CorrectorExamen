@@ -76,7 +76,18 @@ function StepReporteFinal({
             <span>Registros en carpeta: <strong>{carpeta.totalReportes}</strong></span>
           </div>
           <table className="tabla-respuestas">
-            <thead><tr><th>Estudiante</th><th>Matrícula</th><th>Materia</th><th>Grupo</th><th>Fecha</th><th>Nota</th><th>Letra</th></tr></thead>
+            <caption>Historial de reportes por materia</caption>
+            <thead>
+              <tr>
+                <th scope="col">Estudiante</th>
+                <th scope="col">Matrícula</th>
+                <th scope="col">Materia</th>
+                <th scope="col">Grupo</th>
+                <th scope="col">Fecha</th>
+                <th scope="col">Nota</th>
+                <th scope="col">Letra</th>
+              </tr>
+            </thead>
             <tbody>
               {carpeta.reportes.map((rep) => (
                 <tr key={rep.id}><td>{rep.estudiante.nombre}</td><td>{rep.estudiante.matricula}</td><td>{rep.examen.materia}</td><td>{rep.examen.grupo}</td><td>{rep.examen.fecha}</td><td>{rep.calificacionFinal.notaSobre100.toFixed(2)}</td><td>{rep.calificacionFinal.letra}</td></tr>

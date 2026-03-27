@@ -94,6 +94,7 @@ Este documento resume mejoras de alto impacto para evolucionar **CalificaYa** de
 - **Revisión enfocada**: filtros de baja confianza OCR e incorrectas reducen la navegación manual en revisión.
 - **Métrica técnica**: tiempo medio para completar revisión de un grupo se reduce al menos 30% frente a línea base y tasa de error de importación < 1%.
 - **Evidencia esperada**: pruebas E2E de importación/revisión, benchmark de tiempo de tarea (antes/después) y reporte de accesibilidad (teclado, contraste, ARIA).
+- **Evidencia actual (MVP):** reporte base disponible en `docs/accessibility-report.md` con criterios ejecutados, fecha y hallazgos.
 
 ## 6) Pruebas y entrega continua (prioridad media)
 
