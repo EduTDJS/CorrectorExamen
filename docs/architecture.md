@@ -88,6 +88,13 @@ Los siguientes módulos se consideran críticos para la operación y deben mante
   - `respuestasParseadas: Array<{ respuesta: string, confianza: number | null, fuenteLinea: string }>`
 - Umbral de baja confianza en UI: `< 65` (porcentaje OCR).
 
+## Prueba E2E crítica del roadmap (flujo mínimo estable)
+
+- Archivo: `e2e/roadmap-critical-flow.spec.js`.
+- Fixtures determinísticas: `e2e/fixtures/mockData.js`.
+- Cobertura del caso: configuración de examen, importación por archivo, revisión/corrección con IA mock, persistencia en backend (`POST /api/reportes`) y exportación (`GET /api/reportes/:id/export`).
+- Evidencia en CI: artefacto `e2e-critical-flow-evidence` (traces/videos/resultados de Playwright) además de `playwright-report`.
+
 ## Flujo de importación masiva (CSV/Excel)
 
 1. `StepIngresoRespuestas` permite cargar archivo de importación (`.csv`, `.xls`, `.xlsx` en SpreadsheetML).

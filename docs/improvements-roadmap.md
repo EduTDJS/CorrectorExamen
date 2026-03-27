@@ -111,6 +111,7 @@ Este documento resume mejoras de alto impacto para evolucionar **CalificaYa** de
 - **Contratos backend robustos**: adaptadores de IA manejan respuestas parciales/mal formadas sin romper contrato API.
 - **Métrica técnica**: cobertura mínima de pruebas ≥ 80% en módulos críticos y tasa de builds exitosos en rama principal ≥ 95% por mes.
 - **Evidencia esperada**: pipeline CI con quality gates visibles, reportes de cobertura/publicación de artefactos y ADR de estrategia de testing y release.
+- **Evidencia actual (implementada):** caso crítico E2E `e2e/roadmap-critical-flow.spec.js` cubre configuración, importación por archivo, revisión/corrección, `POST /api/reportes` y `GET /api/reportes/:id/export`, con fixtures determinísticas en `e2e/fixtures/mockData.js` y artefacto dedicado en CI (`e2e-critical-flow-evidence`).
 
 ## Impacto documental esperado (por iniciativa de arquitectura)
 
