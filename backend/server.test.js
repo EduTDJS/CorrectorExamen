@@ -321,6 +321,51 @@ describe('backend/server API', () => {
     }
   });
 
+
+  it('POST /api/calificacion/sugerir devuelve error de contrato inválido del proveedor', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, {
+      choices: [{ message: { content: 'respuesta sin json válido' } }]
+    })));
+
+    const app = await loadServer({ provider: 'openai' });
+
+    try {
+      const result = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/calificacion/sugerir',
+        method: 'POST',
+        body: basePayload
+      });
+
+      expect(result.status).toBe(502);
+      expect(result.json.error.code).toBe('provider_contract_error');
+      expect(result.json.error.provider).toBe('openai');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('POST /api/calificacion/sugerir devuelve timeout cuando el proveedor aborta', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(Object.assign(new Error('abort'), { name: 'AbortError' })));
+
+    const app = await loadServer({ provider: 'openai' });
+
+    try {
+      const result = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/calificacion/sugerir',
+        method: 'POST',
+        body: basePayload
+      });
+
+      expect(result.status).toBe(504);
+      expect(result.json.error.code).toBe('provider_timeout');
+      expect(result.json.error.provider).toBe('openai');
+    } finally {
+      await app.close();
+    }
+  });
+
   it('POST /api/reportes permite crear, listar, obtener y editar con auditoría', async () => {
     const app = await loadServer({ provider: 'openai' });
 

@@ -33,7 +33,31 @@ export default defineConfig({
         functions: 70,
         lines: 70,
         perFile: true,
-        autoUpdate: false
+        autoUpdate: false,
+        'backend/server.js': {
+          statements: 80,
+          branches: 60,
+          functions: 80,
+          lines: 80
+        },
+        'backend/ai/providerOrchestrator.js': {
+          statements: 80,
+          branches: 60,
+          functions: 80,
+          lines: 80
+        },
+        'src/hooks/useReportes.js': {
+          statements: 80,
+          branches: 60,
+          functions: 80,
+          lines: 80
+        },
+        'src/services/aiService.js': {
+          statements: 80,
+          branches: 60,
+          functions: 80,
+          lines: 80
+        }
       }
     }
   }
