@@ -141,14 +141,19 @@ Reportes publicados por CI:
 - `coverage/index.html` y archivos HTML asociados para inspección visual por archivo/línea.
 - Resumen `text` en logs del job para diagnóstico rápido.
 
-Umbrales vigentes (globales y por archivo):
+Umbrales vigentes:
 
-- `statements >= 70`
-- `branches >= 60`
-- `functions >= 70`
-- `lines >= 70`
+- Globales: `statements >= 70`, `branches >= 60`, `functions >= 70`, `lines >= 70`.
+- Quality gate de módulos críticos (por archivo):
+  - `backend/server.js >= 80`
+  - `backend/ai/providerOrchestrator.js >= 80`
+  - `src/hooks/useReportes.js >= 80`
+  - `src/services/aiService.js >= 80`
+  (cada uno en `statements`, `functions` y `lines`; `branches` mantiene el umbral global).
 
 Interpretación operativa:
+
+- Cualquier incumplimiento de los módulos críticos se considera falla de quality gate, aunque los globales se mantengan.
 
 - Si el job falla por cobertura, la causa raíz suele estar en archivos nuevos o modificados que no alcanzan umbral por archivo (`perFile: true`).
 - Usar el reporte HTML para localizar líneas sin cubrir y priorizar pruebas en ramas condicionales no ejercitadas.

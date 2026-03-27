@@ -1,7 +1,8 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook, waitFor, act } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { agruparReportesPorMateria, useReportes } from './useReportes';
+import { agruparReportesPorMateria, detectarMatriculasDuplicadas, useReportes } from './useReportes';
 import {
+  guardarReporteApi,
   guardarReportes,
   leerReportes,
   listarReportesApi
@@ -40,11 +41,45 @@ describe('agruparReportesPorMateria', () => {
     expect(agrupado[0].totalReportes).toBe(2);
     expect(agrupado[0].reportes.map((rep) => rep.id)).toEqual(['r-1', 'r-2']);
   });
+
+  it('normaliza y ordena carpetas al agrupar', () => {
+    const agrupado = agruparReportesPorMateria([
+      {
+        id: 'r-3',
+        creadoEn: '2026-03-25T10:00:00.000Z',
+        examen: { materia: 'Zoología' }
+      },
+      {
+        id: 'r-4',
+        creadoEn: '2026-03-26T10:00:00.000Z',
+        examen: { materia: '' }
+      },
+      {
+        id: 'r-5',
+        creadoEn: '2026-03-25T09:00:00.000Z',
+        examen: { materia: 'álgebra' }
+      }
+    ]);
+
+    expect(agrupado.map((item) => item.materia)).toEqual(['álgebra', 'Sin materia', 'Zoología']);
+    expect(agrupado[1]).toMatchObject({
+      materiaNormalizada: 'sin materia',
+      materiaFolderId: 'materia:sin materia'
+    });
+  });
+});
+
+describe('detectarMatriculasDuplicadas', () => {
+  it('detecta matrículas ya registradas y evita duplicados en la entrada', () => {
+    const reportes = [{ estudiante: { matricula: 'A-001' } }, { estudiante: { matricula: 'B-002' } }];
+    const duplicadas = detectarMatriculasDuplicadas(reportes, ['A-001', 'A-001', 'X-100', 'B-002']);
+    expect(duplicadas).toEqual(['A-001', 'B-002']);
+  });
 });
 
 describe('useReportes', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it('usa backend activo sin escribir fallback local', async () => {
@@ -87,5 +122,109 @@ describe('useReportes', () => {
 
     expect(leerReportes).toHaveBeenCalledTimes(1);
     expect(guardarReportes).toHaveBeenCalledWith([reporteLocal]);
+  });
+
+  it('propaga error de sesión cuando backend responde 401/403 en carga inicial', async () => {
+    listarReportesApi.mockRejectedValue({ status: 401, message: 'Sesión vencida' });
+    leerReportes.mockReturnValue([]);
+
+    const { result } = renderHook(() => useReportes());
+
+    await waitFor(() => {
+      expect(result.current.errorSesion).toBe('Sesión vencida');
+    });
+  });
+
+  it('guarda reporte por API y actualiza existente cuando usa backend', async () => {
+    const reporteOriginal = {
+      id: 'rep-1',
+      creadoEn: '2026-03-25T10:00:00.000Z',
+      examen: { materia: 'Historia', grupo: 'A', fecha: '2026-03-25' }
+    };
+    const reporteEditado = {
+      ...reporteOriginal,
+      examen: { ...reporteOriginal.examen, grupo: 'B' }
+    };
+
+    listarReportesApi.mockResolvedValue([reporteOriginal]);
+    guardarReporteApi.mockResolvedValue(reporteEditado);
+
+    const { result } = renderHook(() => useReportes());
+    await waitFor(() => expect(result.current.reportes).toEqual([reporteOriginal]));
+
+    await act(async () => {
+      await result.current.guardarReporte(reporteEditado);
+    });
+
+    expect(guardarReporteApi).toHaveBeenCalledWith(reporteEditado);
+    expect(result.current.reportes).toEqual([reporteEditado]);
+  });
+
+  it('guarda en memoria local cuando opera en fallback', async () => {
+    listarReportesApi.mockRejectedValue(new Error('backend off'));
+    leerReportes.mockReturnValue([]);
+
+    const { result } = renderHook(() => useReportes());
+    await waitFor(() => expect(result.current.reportes).toEqual([]));
+
+    const nuevo = {
+      id: 'local-new',
+      creadoEn: '2026-03-26T09:00:00.000Z',
+      examen: { materia: 'Historia', grupo: 'A', fecha: '2026-03-26' }
+    };
+
+    await act(async () => {
+      await result.current.guardarReporte(nuevo);
+    });
+
+    expect(result.current.reportes).toEqual([nuevo]);
+    expect(guardarReporteApi).not.toHaveBeenCalled();
+  });
+
+  it('propaga error cuando guardarReporte API devuelve 403', async () => {
+    const existente = {
+      id: 'rep-base',
+      creadoEn: '2026-03-26T10:00:00.000Z',
+      examen: { materia: 'Historia', grupo: 'A', fecha: '2026-03-26' }
+    };
+    listarReportesApi.mockResolvedValue([existente]);
+    guardarReporteApi.mockRejectedValue({ status: 403, message: 'No autorizado' });
+
+    const { result } = renderHook(() => useReportes());
+    await waitFor(() => expect(result.current.reportes).toEqual([existente]));
+
+    await expect(act(async () => {
+      await result.current.guardarReporte({ id: 'r-denied', examen: { materia: 'A' } });
+    })).rejects.toMatchObject({ status: 403 });
+
+    expect(guardarReporteApi).toHaveBeenCalledTimes(1);
+  });
+
+  it('filtra reportes por materia, grupo y fecha', async () => {
+    listarReportesApi.mockResolvedValue([
+      {
+        id: 'r1',
+        creadoEn: '2026-03-26T10:00:00.000Z',
+        examen: { materia: 'Matemática', grupo: 'A', fecha: '2026-03-26' },
+        organizacion: { materiaNormalizada: 'matematica', materiaFolderId: 'materia:matematica' }
+      },
+      {
+        id: 'r2',
+        creadoEn: '2026-03-25T10:00:00.000Z',
+        examen: { materia: 'Historia', grupo: 'B', fecha: '2026-03-25' },
+        organizacion: { materiaNormalizada: 'historia', materiaFolderId: 'materia:historia' }
+      }
+    ]);
+
+    const { result } = renderHook(() => useReportes());
+    await waitFor(() => expect(result.current.reportes).toHaveLength(2));
+
+    act(() => {
+      result.current.setFiltrosHistorial({ materia: 'mate', grupo: 'A', fecha: '2026-03-26' });
+    });
+
+    expect(result.current.reportesFiltrados.map((item) => item.id)).toEqual(['r1']);
+    expect(result.current.reportesAgrupadosPorMateria).toHaveLength(1);
+    expect(result.current.reportesAgrupadosPorMateria[0].materia).toBe('Matemática');
   });
 });

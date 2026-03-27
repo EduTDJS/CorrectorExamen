@@ -51,6 +51,18 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
+
+## Módulos críticos (quality gate)
+
+Los siguientes módulos se consideran críticos para la operación y deben mantener cobertura mínima por archivo de **80%** en `statements`, `functions` y `lines` (y al menos el umbral global vigente en `branches`):
+
+- `backend/server.js`
+- `backend/ai/providerOrchestrator.js`
+- `src/hooks/useReportes.js`
+- `src/services/aiService.js`
+
+> Regla de enforcement: `npm run test:ci` (Vitest con cobertura) falla si cualquiera de estos módulos queda por debajo de ese umbral, además de respetar los umbrales globales del proyecto.
+
 ## Flujo de datos OCR enriquecido
 
 1. `StepIngresoRespuestas` invoca `procesarImagenOCR` de `src/services/ocrService.js`.

@@ -53,7 +53,7 @@ Flujo recomendado antes de abrir PR:
 
 1. `npm install`
 2. `npm run lint`
-3. `npm run test:ci`
+3. `npm run test:ci` (incluye quality gate de cobertura para módulos críticos)
 4. `npm run build`
 5. `npm run test:e2e`
 
@@ -181,12 +181,10 @@ Para mejorar la precisión del OCR cuando se corrige por imagen:
 
 La cobertura se genera con provider `v8` y reportes `text`, `lcov` y `html` en la carpeta `coverage/`.
 
-Umbrales vigentes (globales y por archivo):
+Umbrales vigentes:
 
-- Statements: **70%**
-- Branches: **60%**
-- Functions: **70%**
-- Lines: **70%**
+- **Globales**: Statements **70%**, Branches **60%**, Functions **70%**, Lines **70%**.
+- **Módulos críticos (por archivo, quality gate)**: `backend/server.js`, `backend/ai/providerOrchestrator.js`, `src/hooks/useReportes.js`, `src/services/aiService.js` con mínimo **80%** en Statements, Functions y Lines (Branches mantiene el umbral global del proyecto).
 
 Si cualquier umbral no se cumple, `npm run test:ci` falla y el workflow de CI marca el job como fallido.
 
