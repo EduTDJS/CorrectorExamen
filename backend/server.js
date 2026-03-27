@@ -923,15 +923,17 @@ const handler = async (req, res) => {
       return;
     }
 
+    const untrustedActorHint = String(req.headers['x-actor'] || '').trim();
     const deleted = await deleteReport(reportId, {
-      actor: String(req.headers['x-actor'] || req.user?.userId || 'frontend_tecnico').trim() || 'frontend_tecnico',
+      actor: req.user?.userId || 'system',
       auditMetadata: {
         tenantId: req.user?.tenantId || req.user?.institution,
         userId: req.user?.userId,
         role: req.user?.role,
         sessionId: req.user?.sessionId,
         resource: '/api/reportes/:id',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        ...(untrustedActorHint ? { untrustedActorHint } : {})
       }
     });
 
@@ -1017,7 +1019,8 @@ const handler = async (req, res) => {
 
     try {
       const payload = validarPayloadReporte(await parseBody(req));
-      const actor = String(req.headers['x-actor'] || 'frontend_tecnico').trim() || 'frontend_tecnico';
+      const untrustedActorHint = String(req.headers['x-actor'] || '').trim();
+      const actor = req.user?.userId || 'system';
       const payloadId = typeof payload.id === 'string' ? payload.id : '';
       const accessScope = getReportAccessScope(req.user);
       const existe = payloadId ? await getReportById(payloadId, accessScope) : null;
@@ -1037,7 +1040,8 @@ const handler = async (req, res) => {
       };
       const auditMetadata = {
         tenantId: req.user?.tenantId || req.user?.institution,
-        sessionId: req.user?.sessionId
+        sessionId: req.user?.sessionId,
+        ...(untrustedActorHint ? { untrustedActorHint } : {})
       };
       const reporte = existe
         ? await updateReport(payloadId, payload, { actor, ownership, auditMetadata })

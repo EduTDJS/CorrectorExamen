@@ -66,6 +66,8 @@ Si falta o es inválido, backend responde `401` con `error.code = "auth_unauthor
   - si el recurso existe pero pertenece a otro tenant/usuario, backend responde `403` (`auth_forbidden`);
   - si no existe, responde `404`.
 - La auditoría en `audit_logs.metadata_json` registra `tenantId` y `sessionId` en `report_created` / `report_updated` para trazabilidad entre sesión y recurso.
+- El campo `audit_logs.actor` en eventos de persistencia (`report_created`, `report_updated`, `final_grade_changed`, `report_deleted`) se deriva de `req.user.userId` validado por sesión firmada (`Authorization: Bearer <session-token>`), no de headers cliente como `x-actor`.
+- Si llega `x-actor`, backend lo conserva solo como metadato no confiable (`untrustedActorHint`) dentro de `audit_logs.metadata_json`.
 
 ## RBAC por acción
 
