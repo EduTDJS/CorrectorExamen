@@ -45,7 +45,7 @@ CalificaYa permite **configurar, corregir y reportar exámenes de selección mú
 │ Backend Node (backend/server.js)                                          │
 │ POST /api/calificacion/sugerir -> providerOrchestrator (primario/sec.)    │
 │ POST /api/reportes + GET /api/reportes + GET /api/reportes/:id            │
-│ GET/POST /api/rubricas -> rubricRepository                                │
+│ GET/POST /api/rubricas -> rubricRepository (SQLite durable + versionado)  │
 │ GET /api/reportes/:id/versiones (+ /:version)                             │
 │ Resiliencia: fallback + reintentos + circuit breaker por proveedor         │
 └────────────────────────────────────────────────────────────────────────────┘
@@ -78,6 +78,8 @@ Los siguientes módulos se consideran críticos para la operación y deben mante
 3. Al seleccionar plantilla, `App.jsx` autocompleta `materia`, `totalPreguntas` y `claveRespuestas` usando `criterios[]`.
 4. El cálculo de puntaje usa `src/utils/rubricScoring.js`, que aplica pesos por criterio y reglas de penalización/bonificación.
 5. `StepRevision` permite override manual docente por pregunta; el ajuste se refleja en el puntaje y justificación final.
+6. `rubricRepository` persiste en SQLite (`rubrics` + `rubric_versions`) y al editar crea una versión incremental (`n+1`) manteniendo historial por rúbrica.
+7. `GET /api/rubricas` permite filtrar por `materia`, `grado`, `version` y controlar si retorna solo versión vigente (`vigente=true`, default) o historial (`historial=true`).
 
 ### Contrato OCR interno
 

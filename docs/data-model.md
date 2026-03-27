@@ -66,15 +66,22 @@ rubrics (plantillas versionadas)
   - cada actualización: inserta versión `n+1` y persiste diff mínimo sobre `calificacionFinal`.
 
 ### `rubrics`
-- Plantillas de evaluación reutilizables por materia y grado.
-- Campos mínimos:
-  - `id: string`
-  - `materia: string`
-  - `grado: string`
-  - `criterios[]` (`pregunta`, `descripcion`, `respuestaCorrecta`, `peso`)
-  - `reglasPenalizacionBonificacion` (`penalizacionSinRespuesta`, `bonificacionPorRachaCorrecta`)
-  - `version: number`
-- Endpoints backend: `GET /api/rubricas` y `POST /api/rubricas`.
+- Catálogo durable de plantillas por tenant/materia/grado.
+- Clave primaria: `id`.
+- Restricción de unicidad: `(tenant_id, materia, grado)`.
+- Campos: `tenant_id`, `materia`, `grado`, `current_version`, `created_at`, `updated_at`.
+
+### `rubric_versions`
+- Historial inmutable de versiones por rúbrica.
+- FK: `rubric_id -> rubrics.id`.
+- Restricción de unicidad: `(rubric_id, version_number)`.
+- Campos: `criterios_json`, `reglas_json`, `created_by`, `created_at`.
+- Regla de versionado:
+  - primera creación de plantilla: inserta `version_number = 1`;
+  - edición de plantilla existente: inserta `n+1` y actualiza `rubrics.current_version`.
+- Endpoints backend:
+  - `GET /api/rubricas` admite filtros `materia`, `grado`, `version`, `rubricId`, `vigente`, `historial`.
+  - `POST /api/rubricas` crea una nueva plantilla o una nueva versión incremental si ya existe plantilla para el mismo `id` o para la misma combinación `materia + grado` en el tenant.
 
 ## Proyección/snapshot
 
@@ -102,6 +109,7 @@ El backend aplica migraciones incrementales con control de versión en `schema_m
 - **v2**: tablas normalizadas (`schools`, `groups`, `exams`, `students`, `submissions`, `grades`) + `reports.submission_id`.
 - **v3**: backfill inicial desde snapshots legacy cuando existe data previa.
 - **v4**: tabla `report_versions` + backfill inicial (versión `1`) desde `reports`.
+- **v5**: tablas `rubrics` + `rubric_versions` con índices y constraints de versionado durable por tenant.
 
 Las migraciones viven en `backend/db/migrate.js`, y `backend/db/schema.sql` representa el estado consolidado esperado al final.
 

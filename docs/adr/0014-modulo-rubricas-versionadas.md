@@ -15,10 +15,20 @@ Se incorpora un módulo de dominio de rúbricas con contrato mínimo versionado:
 - `reglasPenalizacionBonificacion`
 - `version`
 
-Se implementa persistencia backend mediante `backend/repositories/rubricRepository.js` y endpoints:
+Se implementa persistencia backend durable (SQLite) mediante `backend/repositories/rubricRepository.js` y endpoints:
 
 - `GET /api/rubricas`
 - `POST /api/rubricas`
+
+Modelo persistido:
+
+- `rubrics`: catálogo por (`tenant_id`, `materia`, `grado`) con `current_version`.
+- `rubric_versions`: historial inmutable con `version_number` incremental, `criterios_json`, `reglas_json`, `created_by`.
+
+Regla de escritura:
+
+- Si la plantilla no existe en el tenant, se crea `version=1`.
+- Si existe (por `id` o por `materia+grado`), `POST /api/rubricas` crea una nueva versión `n+1` y actualiza `current_version`.
 
 En frontend:
 
@@ -38,4 +48,4 @@ En frontend:
 ### Trade-offs y riesgos
 
 - Se incrementa complejidad del estado en frontend.
-- La persistencia inicial del repositorio de rúbricas es en memoria de proceso; para alta durabilidad futura debe migrarse a almacenamiento transaccional (SQLite/postgres).
+- El historial durable añade costo de almacenamiento y requiere política de mantenimiento si el número de versiones crece sin control.

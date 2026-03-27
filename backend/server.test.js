@@ -193,15 +193,26 @@ describe('backend/server API', () => {
     }
   });
 
-  it('GET /api/rubricas lista plantillas disponibles', async () => {
+  it('GET /api/rubricas lista plantillas vigentes por materia/grado', async () => {
     const app = await loadServer({ provider: 'openai' });
 
     try {
-      const result = await apiRequest({ baseUrl: app.baseUrl, path: '/api/rubricas' });
+      await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/rubricas',
+        method: 'POST',
+        body: {
+          materia: 'Matemáticas',
+          grado: '6to primaria',
+          criterios: [{ pregunta: 1, descripcion: 'Operaciones básicas', respuestaCorrecta: 'A', peso: 1 }],
+          reglasPenalizacionBonificacion: { penalizacionSinRespuesta: 0 }
+        }
+      });
+
+      const result = await apiRequest({ baseUrl: app.baseUrl, path: '/api/rubricas?materia=Matem%C3%A1ticas&grado=6to%20primaria' });
       expect(result.status).toBe(200);
       expect(Array.isArray(result.json.data)).toBe(true);
       expect(result.json.data[0]).toMatchObject({
-        id: 'rubrica-matematicas-6to-v1',
         materia: 'Matemáticas'
       });
     } finally {
@@ -235,6 +246,60 @@ describe('backend/server API', () => {
         grado: '3ro secundaria',
         version: 1
       });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('POST /api/rubricas crea versión incremental y GET permite leer historial por rúbrica', async () => {
+    const app = await loadServer({ provider: 'openai' });
+
+    try {
+      const v1 = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/rubricas',
+        method: 'POST',
+        body: {
+          materia: 'Química',
+          grado: '4to secundaria',
+          criterios: [{ pregunta: 1, descripcion: 'Enlace iónico', respuestaCorrecta: 'A', peso: 1 }],
+          reglasPenalizacionBonificacion: { penalizacionSinRespuesta: 0.1 }
+        }
+      });
+      expect(v1.status).toBe(201);
+      expect(v1.json.data.version).toBe(1);
+
+      const v2 = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/rubricas',
+        method: 'POST',
+        body: {
+          id: v1.json.data.id,
+          materia: 'Química',
+          grado: '4to secundaria',
+          criterios: [{ pregunta: 1, descripcion: 'Enlace covalente', respuestaCorrecta: 'B', peso: 2 }],
+          reglasPenalizacionBonificacion: { penalizacionSinRespuesta: 0.2 }
+        }
+      });
+
+      expect(v2.status).toBe(201);
+      expect(v2.json.data.id).toBe(v1.json.data.id);
+      expect(v2.json.data.version).toBe(2);
+
+      const vigente = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/rubricas?materia=Qu%C3%ADmica&grado=4to%20secundaria'
+      });
+      expect(vigente.status).toBe(200);
+      expect(vigente.json.data).toHaveLength(1);
+      expect(vigente.json.data[0].version).toBe(2);
+
+      const historial = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/rubricas?rubricId=${encodeURIComponent(v1.json.data.id)}&vigente=false&historial=true`
+      });
+      expect(historial.status).toBe(200);
+      expect(historial.json.data.map((item) => item.version)).toEqual([2, 1]);
     } finally {
       await app.close();
     }
