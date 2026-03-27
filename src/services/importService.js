@@ -3,7 +3,7 @@ import { convertirTextoALista, limpiarRespuestas } from '../utils/examUtils';
 export const IMPORT_LIMITS = {
   maxRows: 200,
   maxFileSizeBytes: 2 * 1024 * 1024,
-  supportedExtensions: ['csv', 'xlsx', 'xls']
+  supportedExtensions: ['csv']
 };
 
 const REQUIRED_FIELDS = ['estudianteNombre', 'estudianteMatricula', 'respuestas'];
@@ -70,7 +70,9 @@ const parseCsvText = (csvText = '') => {
     .map((line) => line.trim())
     .filter(Boolean);
 
-  if (!lines.length) return [];
+  if (!lines.length) {
+    return [];
+  }
 
   const headers = parseCsvLine(lines[0]);
   return lines.slice(1).map((line) => {
@@ -80,26 +82,6 @@ const parseCsvText = (csvText = '') => {
       return row;
     }, {});
   });
-};
-
-const parseSpreadsheetMlText = (xmlText = '') => {
-  if (!xmlText.includes('<Workbook')) {
-    throw new Error('Excel no compatible. Exporte como CSV UTF-8 o SpreadsheetML 2003.');
-  }
-
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(xmlText, 'application/xml');
-  const rowNodes = Array.from(doc.getElementsByTagName('Row'));
-
-  if (rowNodes.length < 2) return [];
-
-  const rows = rowNodes.map((rowNode) => Array.from(rowNode.getElementsByTagName('Data')).map((cell) => (cell.textContent || '').trim()));
-  const headers = rows[0];
-
-  return rows.slice(1).map((row) => headers.reduce((acc, header, index) => {
-    acc[header] = row[index] || '';
-    return acc;
-  }, {}));
 };
 
 const obtenerExtension = (filename = '') => {
@@ -133,7 +115,9 @@ const validarSchema = (registro, totalPreguntas, indiceFila) => {
 };
 
 export const validarArchivoImportacion = (file) => {
-  if (!file) throw new Error('Debe seleccionar un archivo para importar.');
+  if (!file) {
+    throw new Error('Debe seleccionar un archivo para importar.');
+  }
 
   if (file.size > IMPORT_LIMITS.maxFileSizeBytes) {
     throw new Error(`Archivo excede el tamaño máximo de ${Math.round(IMPORT_LIMITS.maxFileSizeBytes / (1024 * 1024))}MB.`);
@@ -141,29 +125,31 @@ export const validarArchivoImportacion = (file) => {
 
   const extension = obtenerExtension(file.name);
   if (!IMPORT_LIMITS.supportedExtensions.includes(extension)) {
-    throw new Error('Formato no soportado. Use CSV o Excel (.xlsx/.xls).');
+    throw new Error('Formato no soportado. Use CSV UTF-8 (.csv).');
   }
 
   return extension;
 };
 
+const leerComoTexto = (file) => new Promise((resolve, reject) => {
+  if (typeof file?.text === 'function') {
+    file.text().then(resolve).catch(reject);
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result || ''));
+  reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+  reader.readAsText(file);
+});
+
 const parseByExtension = async (file, extension) => {
-  const text = await new Promise((resolve, reject) => {
-    if (typeof file?.text === 'function') {
-      file.text().then(resolve).catch(reject);
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
-    reader.readAsText(file);
-  });
-
+  const text = await leerComoTexto(file);
   if (extension === 'csv') {
     return parseCsvText(text);
   }
-  return parseSpreadsheetMlText(text);
+
+  throw new Error('Formato no soportado. Use CSV UTF-8 (.csv).');
 };
 
 export const parsearArchivoImportacion = async ({ file, totalPreguntas }) => {

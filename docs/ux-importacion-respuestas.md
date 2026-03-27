@@ -1,10 +1,14 @@
-# UX: Importación de respuestas (CSV/Excel)
+# UX: Importación de respuestas (CSV)
 
 ## Objetivo
 
 Permitir carga masiva de respuestas con validación temprana y corrección manual asistida antes de guardar el reporte.
 
 ## Formato de plantilla
+
+Formato aceptado:
+
+- `CSV UTF-8` (`.csv`).
 
 Campos obligatorios por fila:
 
@@ -43,4 +47,4 @@ Se reportan por fila:
 
 - Tamaño máximo de archivo: `2MB`.
 - Registros máximos por importación: `200`.
-- Formatos aceptados: `CSV` y `Excel SpreadsheetML 2003 (.xls/.xlsx en XML)`.
+- Formato aceptado: `CSV UTF-8` (`.csv`).

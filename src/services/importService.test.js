@@ -1,24 +1,6 @@
 import { detectarMatriculasDuplicadas } from '../hooks/useReportes';
 import { parsearArchivoImportacion, validarArchivoImportacion } from './importService';
 
-const excelXml = `<?xml version="1.0"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet">
-  <Worksheet>
-    <Table>
-      <Row>
-        <Cell><Data>nombre</Data></Cell>
-        <Cell><Data>matrícula</Data></Cell>
-        <Cell><Data>respuesta</Data></Cell>
-      </Row>
-      <Row>
-        <Cell><Data>Lucía</Data></Cell>
-        <Cell><Data>2023008</Data></Cell>
-        <Cell><Data>abdc</Data></Cell>
-      </Row>
-    </Table>
-  </Worksheet>
-</Workbook>`;
-
 describe('importService', () => {
   it('valida extensión soportada', () => {
     const file = new File(['pdf'], 'lote.pdf', { type: 'application/pdf' });
@@ -46,17 +28,24 @@ describe('importService', () => {
     expect(resultado.errores[0].fila).toBe(3);
   });
 
-  it('parsea Excel SpreadsheetML con alias de encabezados', async () => {
-    const file = new File([excelXml], 'respuestas.xls', { type: 'application/vnd.ms-excel' });
+  it('rechaza XLSX válido con error claro cuando el contrato es solo CSV', async () => {
+    const csvContent = [
+      'nombre,matrícula,respuesta',
+      'Lucía,2023008,abdc'
+    ].join('\n');
+    const file = new File([csvContent], 'respuestas.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 
-    const resultado = await parsearArchivoImportacion({ file, totalPreguntas: 4 });
+    await expect(parsearArchivoImportacion({ file, totalPreguntas: 4 }))
+      .rejects
+      .toThrow(/Formato no soportado\. Use CSV UTF-8/);
+  });
 
-    expect(resultado.filas).toHaveLength(1);
-    expect(resultado.filas[0]).toMatchObject({
-      estudianteNombre: 'Lucía',
-      estudianteMatricula: '2023008',
-      respuestasTexto: 'ABDC'
-    });
+  it('reporta error claro para XLSX corrupto o no soportado', async () => {
+    const file = new File(['contenido inválido'], 'respuestas.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    await expect(parsearArchivoImportacion({ file, totalPreguntas: 4 }))
+      .rejects
+      .toThrow(/Formato no soportado\. Use CSV UTF-8/);
   });
 });
 
