@@ -887,7 +887,7 @@ const handler = async (req, res) => {
       return;
     }
 
-    sendJson(res, 200, version, { requestId });
+    sendJson(res, 200, { data: version }, { requestId });
     return;
   }
 
