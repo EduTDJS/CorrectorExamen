@@ -1070,6 +1070,70 @@ describe('backend/server API', () => {
     }
   });
 
+  it('deleteReportGraph revierte borrado si falla la inserción de auditoría', async () => {
+    const app = await loadServer({ provider: 'openai' });
+    const docenteToken = buildSessionToken({ role: 'docente', sub: 'u-docente-1', tenantId: 'tenant-1', institution: 'inst-1' });
+
+    try {
+      const created = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/reportes',
+        method: 'POST',
+        authToken: docenteToken,
+        body: {
+          examen: { materia: 'Contabilidad', grupo: 'A', fecha: '2026-03-20', totalPreguntas: 10, claveRespuestas: 'ABCD' },
+          estudiante: { nombre: 'Ana', matricula: 'A1' },
+          respuestas: { lista: ['A', 'B'], texto: 'AB' },
+          puntuacionPorPregunta: [],
+          justificacionesIA: [],
+          calificacionFinal: { notaSobre100: 80, letra: 'B', justificacionDocente: 'Bien' }
+        }
+      });
+      expect(created.status).toBe(201);
+
+      const existingAudit = JSON.parse(execFileSync(
+        'sqlite3',
+        ['-json', process.env.REPORTS_DB_FILE, `SELECT id FROM audit_logs WHERE report_id = '${created.json.id}' LIMIT 1;`],
+        { encoding: 'utf-8' }
+      ))[0];
+
+      const { getReportsStorageAdapter } = await import('./db/database.js');
+      const storage = await getReportsStorageAdapter();
+
+      await expect(storage.deleteReportGraph(created.json.id, [{
+        id: existingAudit.id,
+        report_id: created.json.id,
+        action: 'report_deleted',
+        actor: 'qa_delete_tester',
+        created_at: new Date().toISOString(),
+        metadata_json: JSON.stringify({ source: 'test', id: created.json.id })
+      }])).rejects.toMatchObject({ code: 'db_query_error' });
+
+      const reportStillExists = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: `/api/reportes/${created.json.id}`,
+        authToken: docenteToken
+      });
+      expect(reportStillExists.status).toBe(200);
+      expect(reportStillExists.json.id).toBe(created.json.id);
+
+      const rawCounts = execFileSync(
+        'sqlite3',
+        ['-json', process.env.REPORTS_DB_FILE, `SELECT
+            (SELECT COUNT(1) FROM reports WHERE id = '${created.json.id}') AS reports_count,
+            (SELECT COUNT(1) FROM submissions WHERE report_id = '${created.json.id}') AS submissions_count,
+            (SELECT COUNT(1) FROM audit_logs WHERE report_id = '${created.json.id}' AND action = 'report_deleted') AS deleted_audit_count;`],
+        { encoding: 'utf-8' }
+      );
+      const counts = JSON.parse(rawCounts)[0];
+      expect(counts.reports_count).toBe(1);
+      expect(counts.submissions_count).toBe(1);
+      expect(counts.deleted_audit_count).toBe(0);
+    } finally {
+      await app.close();
+    }
+  });
+
   it('aplica rate limiting por usuario dentro del mismo tenant', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, {
       choices: [{ message: { content: '{"puntuacion_sugerida": 88, "justificacion_breve": "Correcto"}' } }]
