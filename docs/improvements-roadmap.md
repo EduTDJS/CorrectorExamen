@@ -168,8 +168,12 @@ Todo cambio de decisión técnica (por ejemplo, migración de persistencia o mod
 
 ## Checklist de consistencia documental (previo al cierre de épica)
 
-- [ ] Se actualizaron `docs/architecture.md`, `docs/data-model.md`, `docs/security.md` y/o `docs/observability.md` según el impacto real de la épica.
-- [ ] Se creó o actualizó ADR en `docs/adr/` cuando hubo cambio de decisión técnica.
-- [ ] Los criterios de aceptación y métricas de la épica coinciden con los documentos técnicos actualizados.
-- [ ] Se reflejaron dependencias, supuestos y riesgos nuevos en la documentación correspondiente.
-- [ ] La evidencia (tests, dashboards, migraciones, runbooks) referenciada en la épica existe y está enlazada desde los documentos.
+**Última actualización del checklist:** 2026-03-27.
+
+- [x] Se actualizaron `docs/architecture.md`, `docs/data-model.md`, `docs/security.md` y/o `docs/observability.md` según el impacto real de la épica. _(Evidencia explícita: `architecture.md` documenta flujos backend-first, RBAC y resiliencia; `data-model.md` detalla normalización/versionado; `security.md` cubre sesión+RBAC+auditoría; `observability.md` define eventos/métricas y cobertura CI)._
+- [x] Se creó o actualizó ADR en `docs/adr/` cuando hubo cambio de decisión técnica. _(Evidencia explícita: índice ADR incluye decisiones recientes 0008–0014 para RBAC, resiliencia, backup/restore, versionado, seed y rúbricas)._
+- [x] Los criterios de aceptación y métricas de la épica coinciden con los documentos técnicos actualizados. _(Evidencia explícita: SLO/SLI y métricas operativas en `docs/observability.md`; controles de autorización y rate limiting por rol en `docs/security.md`; cobertura y quality gate en `docs/architecture.md`)._
+- [x] Se reflejaron dependencias, supuestos y riesgos nuevos en la documentación correspondiente. _(Evidencia explícita: `docs/security.md` mantiene secciones de riesgos mitigados/remanentes y recomendaciones operativas; `docs/architecture.md` documenta dependencias de proveedores IA, fallback y transaccionalidad)._
+- [x] La evidencia (tests, dashboards, migraciones, runbooks) referenciada en la épica existe y está enlazada desde los documentos. _(Evidencia explícita: E2E crítico y artefacto CI en `docs/architecture.md`; migraciones+seed en `docs/data-model.md`; runbook y evidencia de restore drill en `docs/observability.md` y `docs/runbooks/backup-restore.md`)._
+
+**Nota de gobernanza:** todo PR de arquitectura debe actualizar este estado.
