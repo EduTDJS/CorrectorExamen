@@ -4,9 +4,10 @@ import path from 'node:path';
 const DB_FILE = process.env.REPORTS_JSON_FALLBACK_FILE || path.resolve(process.cwd(), 'backend/db/data.fallback.json');
 
 const emptyDatabase = () => ({
-  schemaVersion: 2,
+  schemaVersion: 3,
   reports: [],
-  audit_logs: []
+  audit_logs: [],
+  report_versions: []
 });
 
 const ensureDbFile = async () => {
@@ -26,9 +27,10 @@ const readDatabase = async () => {
     const raw = await readFile(DB_FILE, 'utf-8');
     const parsed = JSON.parse(raw);
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       reports: Array.isArray(parsed?.reports) ? parsed.reports : [],
-      audit_logs: Array.isArray(parsed?.audit_logs) ? parsed.audit_logs : []
+      audit_logs: Array.isArray(parsed?.audit_logs) ? parsed.audit_logs : [],
+      report_versions: Array.isArray(parsed?.report_versions) ? parsed.report_versions : []
     };
   } catch {
     return emptyDatabase();
@@ -37,9 +39,10 @@ const readDatabase = async () => {
 
 const writeDatabase = async (db) => {
   const safeDb = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     reports: Array.isArray(db?.reports) ? db.reports : [],
-    audit_logs: Array.isArray(db?.audit_logs) ? db.audit_logs : []
+    audit_logs: Array.isArray(db?.audit_logs) ? db.audit_logs : [],
+    report_versions: Array.isArray(db?.report_versions) ? db.report_versions : []
   };
 
   await ensureDbFile();
@@ -51,7 +54,7 @@ const getById = (db, reportId) => db.reports.find((report) => report.id === repo
 export const createJsonFallbackAdapter = () => ({
   mode: 'json_fallback',
   filePath: DB_FILE,
-  async upsertReportGraph(reportRecord, _normalizedRecord, auditLogs = []) {
+  async upsertReportGraph(reportRecord, _normalizedRecord, auditLogs = [], reportVersion = null) {
     const db = await readDatabase();
     const index = db.reports.findIndex((report) => report.id === reportRecord.id);
 
@@ -62,6 +65,20 @@ export const createJsonFallbackAdapter = () => ({
     }
 
     db.audit_logs.push(...auditLogs);
+    if (reportVersion) {
+      const currentVersion = db.report_versions
+        .filter((version) => version.report_id === reportVersion.reportId)
+        .reduce((max, version) => Math.max(max, Number(version.version_number) || 0), 0);
+      db.report_versions.push({
+        id: `rver_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`,
+        report_id: reportVersion.reportId,
+        version_number: currentVersion + 1,
+        snapshot_json: reportVersion.snapshotJson,
+        diff_json: reportVersion.diffJson,
+        actor: reportVersion.actor,
+        created_at: reportVersion.createdAt
+      });
+    }
     await writeDatabase(db);
     return reportRecord;
   },
@@ -88,5 +105,17 @@ export const createJsonFallbackAdapter = () => ({
   async listAuditLogs() {
     const db = await readDatabase();
     return [...db.audit_logs].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  },
+  async listReportVersions(reportId) {
+    const db = await readDatabase();
+    return db.report_versions
+      .filter((version) => version.report_id === reportId)
+      .sort((a, b) => Number(b.version_number) - Number(a.version_number));
+  },
+  async getReportVersion(reportId, versionNumber) {
+    const db = await readDatabase();
+    return db.report_versions.find((version) => (
+      version.report_id === reportId && Number(version.version_number) === Number(versionNumber)
+    )) || null;
   }
 });

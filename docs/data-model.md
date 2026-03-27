@@ -11,6 +11,8 @@ schools (1) ────< groups (N) ────< exams (N) ────< submi
 
 reports (snapshot/proyección 1:1 con submissions por report_id)
    |
+   ├────< report_versions (N)
+   |
    └────< audit_logs (N)
 ```
 
@@ -52,6 +54,15 @@ reports (snapshot/proyección 1:1 con submissions por report_id)
 - FK: `report_id -> reports.id`.
 - Campos: `action`, `actor`, `created_at`, `metadata_json`.
 
+### `report_versions`
+- Historial inmutable de snapshots por reporte.
+- FK: `report_id -> reports.id`.
+- Restricción de unicidad: `(report_id, version_number)`.
+- Campos: `snapshot_json`, `diff_json`, `actor`, `created_at`.
+- Regla de versionado:
+  - creación de reporte: genera versión `1` con `diff_json = {}`.
+  - cada actualización: inserta versión `n+1` y persiste diff mínimo sobre `calificacionFinal`.
+
 ## Proyección/snapshot
 
 ### `reports`
@@ -77,6 +88,7 @@ El backend aplica migraciones incrementales con control de versión en `schema_m
 - **v1**: `reports` + `audit_logs` (modelo legacy).
 - **v2**: tablas normalizadas (`schools`, `groups`, `exams`, `students`, `submissions`, `grades`) + `reports.submission_id`.
 - **v3**: backfill inicial desde snapshots legacy cuando existe data previa.
+- **v4**: tabla `report_versions` + backfill inicial (versión `1`) desde `reports`.
 
 Las migraciones viven en `backend/db/migrate.js`, y `backend/db/schema.sql` representa el estado consolidado esperado al final.
 
@@ -88,7 +100,8 @@ Cada operación de creación/actualización de reportes ejecuta en una misma tra
 2. upsert de `submissions`.
 3. upsert de `grades`.
 4. upsert de snapshot en `reports`.
-5. inserción en `audit_logs`.
+5. inserción en `report_versions` con incremento de `version_number`.
+6. inserción en `audit_logs`.
 
 Si falla un paso, se revierte toda la transacción.
 
