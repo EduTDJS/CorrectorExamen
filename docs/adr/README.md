@@ -37,6 +37,7 @@ Cada ADR debe incluir estas secciones mínimas:
 - [0012 - Versionado de reportes con snapshot+diff y cumplimiento editorial del roadmap](0012-versionado-reportes-y-regla-editorial-roadmap.md)
 - [0013 - Dataset inicial determinístico e idempotente para desarrollo](0013-seed-dataset-deterministico.md)
 - [0014 - Módulo de rúbricas versionadas para plantillas y scoring docente](0014-modulo-rubricas-versionadas.md)
+- [0015 - Importación Excel por extensión sin agregar nueva dependencia](0015-importacion-excel-sin-nueva-dependencia.md)
 
 ## Nota de nomenclatura
 
