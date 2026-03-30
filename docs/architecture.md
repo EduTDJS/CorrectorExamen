@@ -95,6 +95,16 @@ Los siguientes módulos se consideran críticos para la operación y deben mante
 - Cobertura del caso: configuración de examen, importación por archivo, revisión/corrección con IA mock, persistencia en backend (`POST /api/reportes`) y exportación (`GET /api/reportes/:id/export`).
 - Evidencia en CI: artefacto `e2e-critical-flow-evidence` (traces/videos/resultados de Playwright) además de `playwright-report`.
 
+## Trazabilidad de evidencia hacia roadmap
+
+Para mantener consistencia con `docs/improvements-roadmap.md` (checklist final), la evidencia arquitectónica verificable se concentra en:
+
+- **Flujo transaccional backend-first**: sección "Flujo de persistencia de reportes (transaccional end-to-end)" de este documento.
+- **Cobertura y quality gate**: sección "Módulos críticos (quality gate)" + script `npm run test:ci`.
+- **Prueba E2E crítica**: `e2e/roadmap-critical-flow.spec.js`, `e2e/fixtures/mockData.js` y artefacto CI `e2e-critical-flow-evidence` en `.github/workflows/ci.yml`.
+- **Observabilidad operativa**: endpoints `GET /api/metrics` y `GET /metrics` documentados en `docs/observability.md`.
+- **Dashboard externo del roadmap**: pendiente de publicación (sin URL registrada en repo al 2026-03-30). Al publicarse, debe añadirse URL/panel/fecha/responsable aquí y en `docs/observability.md`.
+
 ## Flujo de importación masiva (CSV/Excel)
 
 1. `StepIngresoRespuestas` permite cargar archivo de importación (`.csv`, `.xls`, `.xlsx` en SpreadsheetML).
