@@ -125,7 +125,8 @@ const apiRequest = ({
   body,
   token = 'test-internal-token',
   authToken = buildSessionToken(),
-  headers = {}
+  headers = {},
+  parseJson = true
 }) => new Promise((resolve, reject) => {
   const url = new URL(requestPath, baseUrl);
   const req = http.request(url, {
@@ -145,7 +146,8 @@ const apiRequest = ({
       resolve({
         status: res.statusCode,
         headers: res.headers,
-        json: raw ? JSON.parse(raw) : {}
+        raw,
+        json: parseJson ? (raw ? JSON.parse(raw) : {}) : undefined
       });
     });
   });
@@ -426,6 +428,82 @@ describe('backend/server API', () => {
       expect(result.status).toBe(504);
       expect(result.json.error.code).toBe('provider_timeout');
       expect(result.json.error.provider).toBe('openai');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('actualiza métricas de /api/calificacion/sugerir para éxito y error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, {
+      choices: [{ message: { content: '{"puntuacion_sugerida": 89, "justificacion_breve": "OK"}' } }]
+    })));
+    const app = await loadServer({ provider: 'openai' });
+
+    try {
+      const success = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/calificacion/sugerir',
+        method: 'POST',
+        body: basePayload
+      });
+      expect(success.status).toBe(200);
+
+      const invalidPayload = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/calificacion/sugerir',
+        method: 'POST',
+        body: { datos: basePayload.datos }
+      });
+      expect(invalidPayload.status).toBe(400);
+
+      const metrics = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/metrics'
+      });
+      expect(metrics.status).toBe(200);
+      expect(metrics.json).toMatchObject({
+        total_requests: 2,
+        total_errors: 1
+      });
+      expect(metrics.json.error_rate).toBeCloseTo(0.5, 6);
+      expect(metrics.json.endpoints['/api/calificacion/sugerir']).toMatchObject({
+        total_requests: 2,
+        total_errors: 1
+      });
+      expect(metrics.json.endpoints['/api/calificacion/sugerir'].error_rate).toBeCloseTo(0.5, 6);
+      expect(metrics.json.endpoints['/api/calificacion/sugerir'].latency_ms.samples).toBe(2);
+      expect(metrics.json.endpoints['/api/calificacion/sugerir'].latency_ms.p95).toBeGreaterThanOrEqual(
+        metrics.json.endpoints['/api/calificacion/sugerir'].latency_ms.p50
+      );
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('expone métricas en formato Prometheus en /metrics', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, {
+      choices: [{ message: { content: '{"puntuacion_sugerida": 77, "justificacion_breve": "Prom"}' } }]
+    })));
+    const app = await loadServer({ provider: 'openai' });
+
+    try {
+      const request = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/api/calificacion/sugerir',
+        method: 'POST',
+        body: basePayload
+      });
+      expect(request.status).toBe(200);
+
+      const metrics = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: '/metrics',
+        parseJson: false
+      });
+      expect(metrics.status).toBe(200);
+      expect(metrics.headers['content-type']).toContain('text/plain');
+      expect(metrics.raw).toContain('correctorexamen_total_requests');
+      expect(metrics.raw).toContain('correctorexamen_endpoint_latency_ms_p95{endpoint="/api/calificacion/sugerir"}');
     } finally {
       await app.close();
     }

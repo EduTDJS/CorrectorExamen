@@ -65,6 +65,55 @@ Campos opcionales por evento:
 - `actor` (cuando aplica: `userId`, `role`, `tenantId`)
 - `resource` (en eventos de reporte: `action`, `type`, `id`, `tenantId`, `endpoint`, `timestamp`)
 
+## Métricas operativas de calificación
+
+Se instrumenta `POST /api/calificacion/sugerir` con contadores y distribución de latencia en memoria de proceso.
+
+Puntos de exposición:
+
+- `GET /api/metrics`: snapshot JSON interno para dashboard.
+- `GET /metrics`: salida tipo Prometheus (`text/plain`) para scraping.
+
+Ambos endpoints requieren token interno (`INTERNAL_AUTH_TOKEN`) mediante el header configurado en `INTERNAL_AUTH_HEADER`.
+
+### Definición de métricas mínimas
+
+- `total_requests`: total de requests observadas en `/api/calificacion/sugerir`.
+- `total_errors`: total de requests con estado HTTP `>= 400`.
+- `error_rate`: razón `total_errors / total_requests` (global y por endpoint).
+- `latency_ms.p50` y `latency_ms.p95`: percentiles de latencia por endpoint.
+
+En formato Prometheus se publican además:
+
+- `correctorexamen_total_requests`
+- `correctorexamen_total_errors`
+- `correctorexamen_error_rate`
+- `correctorexamen_endpoint_total_requests{endpoint="/api/calificacion/sugerir"}`
+- `correctorexamen_endpoint_total_errors{endpoint="/api/calificacion/sugerir"}`
+- `correctorexamen_endpoint_error_rate{endpoint="/api/calificacion/sugerir"}`
+- `correctorexamen_endpoint_latency_ms_p50{endpoint="/api/calificacion/sugerir"}`
+- `correctorexamen_endpoint_latency_ms_p95{endpoint="/api/calificacion/sugerir"}`
+
+### Método de cálculo (p95 y error rate)
+
+- `error_rate`:
+  - global: `total_errors_global / total_requests_global`
+  - por endpoint: `total_errors_endpoint / total_requests_endpoint`
+- percentiles (`p50`, `p95`):
+  - se ordena la muestra de latencias del endpoint;
+  - se usa método *nearest rank*: índice `ceil(p * N)` con `p ∈ {0.50, 0.95}` y `N = #muestras`.
+
+### Ejemplo de panel / consulta
+
+Panel recomendado (5m):
+
+- **Error rate**:
+  - `sum(rate(correctorexamen_endpoint_total_errors{endpoint="/api/calificacion/sugerir"}[5m])) / sum(rate(correctorexamen_endpoint_total_requests{endpoint="/api/calificacion/sugerir"}[5m]))`
+- **Latencia p95** (gauge reportado por app):
+  - `correctorexamen_endpoint_latency_ms_p95{endpoint="/api/calificacion/sugerir"}`
+- **Latencia p50**:
+  - `correctorexamen_endpoint_latency_ms_p50{endpoint="/api/calificacion/sugerir"}`
+
 ## Catálogo de auditoría de negocio (`audit_logs`)
 
 Eventos persistidos:
