@@ -226,3 +226,18 @@ Alertas sugeridas:
 - `backup_last_age_minutes` por encima del RPO objetivo del ambiente.
 - `backup_success_rate_24h < 0.95` en `prod`.
 - Tendencia de `restore_duration_seconds` cercana o superior al RTO objetivo del ambiente.
+
+## Evidencia trazable para roadmap (`docs/improvements-roadmap.md`)
+
+Referencias concretas para el checklist final del roadmap:
+
+- **Métricas operativas disponibles hoy (sin dashboard externo publicado):**
+  - `GET /api/metrics` (snapshot JSON interno).
+  - `GET /metrics` (formato Prometheus para scraping).
+- **Pruebas y artefactos CI asociados:**
+  - Job `e2e-critical` con artefacto `e2e-critical-flow-evidence` en `.github/workflows/ci.yml`.
+  - Job `restore-drill` con artefacto `restore-drill-evidence` en `.github/workflows/ci.yml`.
+  - Evidencia esperada en repositorio: `artifacts/restore-drill/restore-drill-evidence.json`.
+- **Estado del dashboard externo:**
+  - Estado: **pendiente** (no hay URL de panel operativo registrada en este repositorio al 2026-03-30).
+  - Criterio para cerrar: registrar URL + nombre del panel + fecha de última verificación + responsable en este documento y en `docs/improvements-roadmap.md`.
