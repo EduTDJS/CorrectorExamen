@@ -181,6 +181,89 @@ class ApiError extends Error {
 const requestBuckets = new Map();
 let rateLimitCleanupTimer = null;
 let lastBucketCountLogAt = 0;
+const METRICS_ENDPOINT_KEY = '/api/calificacion/sugerir';
+const endpointMetrics = new Map();
+
+const getOrCreateEndpointMetrics = (endpoint) => {
+  if (!endpointMetrics.has(endpoint)) {
+    endpointMetrics.set(endpoint, {
+      totalRequests: 0,
+      totalErrors: 0,
+      latenciesMs: []
+    });
+  }
+  return endpointMetrics.get(endpoint);
+};
+
+const quantile = (values, percentile) => {
+  if (!values.length) {
+    return 0;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const rank = Math.max(1, Math.ceil(percentile * sorted.length));
+  return sorted[rank - 1];
+};
+
+const observeEndpointRequest = ({ endpoint, durationMs, statusCode }) => {
+  const metrics = getOrCreateEndpointMetrics(endpoint);
+  metrics.totalRequests += 1;
+  if (statusCode >= 400) {
+    metrics.totalErrors += 1;
+  }
+  metrics.latenciesMs.push(durationMs);
+};
+
+const collectMetricsSnapshot = () => {
+  let totalRequests = 0;
+  let totalErrors = 0;
+  const endpoints = {};
+
+  for (const [endpoint, metrics] of endpointMetrics.entries()) {
+    totalRequests += metrics.totalRequests;
+    totalErrors += metrics.totalErrors;
+    const errorRate = metrics.totalRequests > 0 ? metrics.totalErrors / metrics.totalRequests : 0;
+
+    endpoints[endpoint] = {
+      total_requests: metrics.totalRequests,
+      total_errors: metrics.totalErrors,
+      error_rate: Number(errorRate.toFixed(6)),
+      latency_ms: {
+        p50: quantile(metrics.latenciesMs, 0.5),
+        p95: quantile(metrics.latenciesMs, 0.95),
+        samples: metrics.latenciesMs.length
+      }
+    };
+  }
+
+  return {
+    generated_at: new Date().toISOString(),
+    total_requests: totalRequests,
+    total_errors: totalErrors,
+    error_rate: totalRequests > 0 ? Number((totalErrors / totalRequests).toFixed(6)) : 0,
+    endpoints
+  };
+};
+
+const asPrometheusMetrics = (snapshot) => {
+  const lines = [
+    '# TYPE correctorexamen_total_requests counter',
+    `correctorexamen_total_requests ${snapshot.total_requests}`,
+    '# TYPE correctorexamen_total_errors counter',
+    `correctorexamen_total_errors ${snapshot.total_errors}`,
+    '# TYPE correctorexamen_error_rate gauge',
+    `correctorexamen_error_rate ${snapshot.error_rate}`
+  ];
+
+  for (const [endpoint, endpointSnapshot] of Object.entries(snapshot.endpoints)) {
+    lines.push(`correctorexamen_endpoint_total_requests{endpoint="${endpoint}"} ${endpointSnapshot.total_requests}`);
+    lines.push(`correctorexamen_endpoint_total_errors{endpoint="${endpoint}"} ${endpointSnapshot.total_errors}`);
+    lines.push(`correctorexamen_endpoint_error_rate{endpoint="${endpoint}"} ${endpointSnapshot.error_rate}`);
+    lines.push(`correctorexamen_endpoint_latency_ms_p50{endpoint="${endpoint}"} ${endpointSnapshot.latency_ms.p50}`);
+    lines.push(`correctorexamen_endpoint_latency_ms_p95{endpoint="${endpoint}"} ${endpointSnapshot.latency_ms.p95}`);
+  }
+
+  return `${lines.join('\n')}\n`;
+};
 
 const cleanupExpiredBuckets = (buckets, now = Date.now()) => {
   let removedCount = 0;
@@ -544,6 +627,65 @@ const handler = async (req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && req.url === '/api/metrics') {
+    try {
+      assertInternalToken(req);
+      sendJson(res, 200, collectMetricsSnapshot(), { requestId });
+    } catch (error) {
+      if (error instanceof ApiError) {
+        sendJson(res, error.status || 400, {
+          error: {
+            message: error.message,
+            code: error.code,
+            requestId
+          }
+        }, { requestId });
+        return;
+      }
+
+      sendJson(res, 400, {
+        error: {
+          message: error?.message || 'No se pudo obtener métricas.',
+          code: API_ERRORS.BAD_REQUEST,
+          requestId
+        }
+      }, { requestId });
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/metrics') {
+    try {
+      assertInternalToken(req);
+      const snapshot = collectMetricsSnapshot();
+      res.writeHead(200, {
+        'Content-Type': 'text/plain; version=0.0.4; charset=utf-8',
+        'X-Request-Id': requestId
+      });
+      res.end(asPrometheusMetrics(snapshot));
+    } catch (error) {
+      if (error instanceof ApiError) {
+        sendJson(res, error.status || 400, {
+          error: {
+            message: error.message,
+            code: error.code,
+            requestId
+          }
+        }, { requestId });
+        return;
+      }
+
+      sendJson(res, 400, {
+        error: {
+          message: error?.message || 'No se pudo obtener métricas.',
+          code: API_ERRORS.BAD_REQUEST,
+          requestId
+        }
+      }, { requestId });
+    }
+    return;
+  }
+
   if (req.method === 'POST' && req.url === '/api/calificacion/sugerir') {
     try {
       const accessResult = await runProtectedAction({
@@ -576,6 +718,11 @@ const handler = async (req, res) => {
         path: requestPath
       });
       sendJson(res, 200, sugerencia, { requestId });
+      observeEndpointRequest({
+        endpoint: METRICS_ENDPOINT_KEY,
+        durationMs: Date.now() - startedAt,
+        statusCode: 200
+      });
       logEvent({
         requestId,
         event: 'request_completed',
@@ -588,6 +735,7 @@ const handler = async (req, res) => {
       });
     } catch (error) {
       if (error instanceof ApiError) {
+        const statusCode = error.status || 400;
         sendJson(res, error.status || 400, {
           error: {
             message: error.message,
@@ -595,12 +743,17 @@ const handler = async (req, res) => {
             requestId
           }
         }, { requestId });
+        observeEndpointRequest({
+          endpoint: METRICS_ENDPOINT_KEY,
+          durationMs: Date.now() - startedAt,
+          statusCode
+        });
         logEvent({
           requestId,
           event: 'request_completed',
           method: req.method,
           path: requestPath,
-          status: error.status || 400,
+          status: statusCode,
           durationMs: Date.now() - startedAt,
           errorCode: error.code
         });
@@ -608,6 +761,7 @@ const handler = async (req, res) => {
       }
 
       if (error instanceof ProviderIntegrationError) {
+        const statusCode = error.status || 500;
         sendJson(res, error.status || 500, {
           error: {
             message: error.message,
@@ -616,12 +770,17 @@ const handler = async (req, res) => {
             requestId
           }
         }, { requestId });
+        observeEndpointRequest({
+          endpoint: METRICS_ENDPOINT_KEY,
+          durationMs: Date.now() - startedAt,
+          statusCode
+        });
         logEvent({
           requestId,
           event: 'request_completed',
           method: req.method,
           path: requestPath,
-          status: error.status || 500,
+          status: statusCode,
           durationMs: Date.now() - startedAt,
           provider: error.provider || orchestrator.getStatus().primary?.name,
           errorCode: error.code
@@ -636,6 +795,11 @@ const handler = async (req, res) => {
           requestId
         }
       }, { requestId });
+      observeEndpointRequest({
+        endpoint: METRICS_ENDPOINT_KEY,
+        durationMs: Date.now() - startedAt,
+        statusCode: 400
+      });
       logEvent({
         requestId,
         event: 'request_completed',
