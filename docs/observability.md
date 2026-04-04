@@ -246,5 +246,13 @@ Referencias concretas para el checklist final del roadmap:
   - Job `restore-drill` con artefacto `restore-drill-evidence` en `.github/workflows/ci.yml`.
   - Evidencia esperada: publicada como artefacto de CI (descargable desde el run), no como archivo versionado en git por defecto.
 - **Estado del dashboard externo:**
-  - Estado: **pendiente** (no hay URL de panel operativo registrada en este repositorio al 2026-03-30).
-  - Criterio para cerrar: registrar URL + nombre del panel + fecha de última verificación + responsable en este documento y en `docs/improvements-roadmap.md`.
+  - `owner`: `pendiente`.
+  - `target_date`: `pendiente` (usar formato ISO-8601 `YYYY-MM-DD`).
+  - `status`: `bloqueado`.
+  - `blocking_dependency`: `No existe aún una URL publicada del dashboard operativo externo en el repositorio`.
+  - `url`: `pendiente`.
+  - `panel_name`: `pendiente`.
+  - `last_verified_at`: `pendiente` (usar formato ISO-8601 `YYYY-MM-DD`).
+  - `responsible`: `pendiente`.
+  - Estado actual: **pendiente** (no hay URL de panel operativo registrada en este repositorio al 2026-04-04).
+  - Criterio para cerrar: cuando exista el panel, registrar aquí mismo URL + nombre del panel + fecha de última verificación + responsable, y reflejar los mismos datos en `docs/improvements-roadmap.md` y `docs/architecture.md`.

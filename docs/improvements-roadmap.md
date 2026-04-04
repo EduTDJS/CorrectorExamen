@@ -168,13 +168,22 @@ Todo cambio de decisión técnica (por ejemplo, migración de persistencia o mod
 
 ## Checklist de consistencia documental (previo al cierre de épica)
 
-**Última actualización del checklist:** 2026-03-30.
+**Última actualización del checklist:** 2026-04-04.
 
 - [x] Se actualizaron `docs/architecture.md`, `docs/data-model.md`, `docs/security.md` y/o `docs/observability.md` según el impacto real de la épica. _(Evidencia: flujo backend-first y persistencia transaccional en `docs/architecture.md` (secciones "Flujo de persistencia..." y "Política de persistencia frontend"); normalización/versionado en `docs/data-model.md`; sesión+RBAC+auditoría y evolución de rate limit en `docs/security.md`; eventos, métricas y endpoints `GET /api/metrics` + `GET /metrics` en `docs/observability.md`.)_
 - [x] Se creó o actualizó ADR en `docs/adr/` cuando hubo cambio de decisión técnica. _(Evidencia: índice `docs/adr/README.md` con ADR 0008 (RBAC), 0009 (resiliencia IA), 0010 (matriz RBAC final), 0011 (backup/restore), 0012 (regla editorial roadmap), 0013 (seed determinístico) y 0014 (rúbricas versionadas).)_
 - [x] Los criterios de aceptación y métricas de la épica coinciden con los documentos técnicos actualizados. _(Evidencia: SLO/SLI y consultas de panel en `docs/observability.md`; controles `401/403`, auditoría y segmentación de rate limit por rol en `docs/security.md`; quality gate por módulos críticos y E2E crítico en `docs/architecture.md`.)_
 - [x] Se reflejaron dependencias, supuestos y riesgos nuevos en la documentación correspondiente. _(Evidencia: riesgos y mitigaciones operativas en `docs/security.md`; dependencias de proveedor IA + fallback/circuit breaker y transaccionalidad en `docs/architecture.md`; restore drill programado y supuestos de backup en `docs/runbooks/backup-restore.md`.)_
-- [ ] La evidencia de dashboard operativo externo de la épica está registrada con datos verificables. _(Pendiente: aún no existe en este repositorio una URL publicada de dashboard. Para marcar como completado se debe añadir aquí **URL**, **nombre del panel**, **fecha de última verificación** (ISO-8601) y **responsable**, y además enlazar ese mismo panel desde `docs/observability.md` y `docs/architecture.md`.)_
+- [ ] La evidencia de dashboard operativo externo de la épica está registrada con datos verificables.
+  - `owner`: `pendiente`.
+  - `target_date`: `pendiente` (usar formato ISO-8601 `YYYY-MM-DD`).
+  - `status`: `bloqueado`.
+  - `blocking_dependency`: `No existe aún una URL publicada del dashboard operativo externo en el repositorio`.
+  - `url`: `pendiente`.
+  - `panel_name`: `pendiente`.
+  - `last_verified_at`: `pendiente` (usar formato ISO-8601 `YYYY-MM-DD`).
+  - `responsible`: `pendiente`.
+  - Nota de cierre: al habilitar el panel, actualizar estos campos y replicar exactamente la misma trazabilidad en `docs/observability.md` (sección “Estado del dashboard externo”) y enlazar también en `docs/architecture.md`.
 - [x] La evidencia restante (tests, migraciones, runbooks y artefactos CI) está enlazada desde los documentos. _(Evidencia: E2E crítico `e2e/roadmap-critical-flow.spec.js` + fixture `e2e/fixtures/mockData.js` y artefacto CI `e2e-critical-flow-evidence` (`.github/workflows/ci.yml`); migraciones/seed y restore drill en `backend/db/runMigrations.js`, `backend/db/seed.js`, `backend/db/restore-drill.js`; runbook en `docs/runbooks/backup-restore.md`; evidencia de restore drill publicada como artefacto CI `restore-drill-evidence` y descrita en `docs/observability.md`.)_
 
 ### Nota sobre evidencia CI vs. archivos versionados
