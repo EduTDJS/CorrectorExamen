@@ -123,3 +123,16 @@ export const exportarGrupoCSV = (reportesFiltrados) => {
   const csv = filas.map((fila) => fila.map(escaparCsv).join(',')).join('\n');
   descargarArchivo(csv, 'reporte_grupal.csv', 'text/csv;charset=utf-8;');
 };
+
+export const exportarOperacionesImportacionCSV = (operaciones = []) => {
+  const filas = [['Timestamp', 'Estrategia', 'MatriculasAfectadas']];
+  operaciones.forEach((operacion) => {
+    filas.push([
+      operacion.timestamp || '',
+      operacion.strategy || '',
+      Array.isArray(operacion.affectedMatriculas) ? operacion.affectedMatriculas.join('|') : ''
+    ]);
+  });
+  const csv = filas.map((fila) => fila.map(escaparCsv).join(',')).join('\n');
+  descargarArchivo(csv, 'operaciones_importacion.csv', 'text/csv;charset=utf-8;');
+};

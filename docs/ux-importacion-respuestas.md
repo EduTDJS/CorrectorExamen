@@ -46,6 +46,11 @@ Luis Díaz,2026002,ABCCDB
 - Si una matrícula aparece varias veces en el mismo archivo, se conserva **la última fila válida**.
 - Se muestra advertencia de duplicados detectados en historial existente.
 - En registro por lote se usa `estudianteMatricula` como clave de idempotencia para evitar reprocesar una misma fila en la misma ejecución.
+- Antes de ejecutar el lote, el usuario puede seleccionar estrategia de conflicto:
+  - `omitir existentes`: no modifica matrículas ya presentes en historial de la materia.
+  - `sobrescribir por matrícula`: actualiza reportes existentes por matrícula.
+  - `crear solo nuevos`: crea solo matrículas nuevas y no contabiliza las existentes como omitidas.
+- La UI muestra un conteo previo por estrategia (`creados / actualizados / omitidos`) para validar impacto antes de ejecutar.
 
 ## Acciones masivas en la vista previa
 
@@ -60,6 +65,11 @@ Luis Díaz,2026002,ABCCDB
   - filas actualizadas,
   - filas omitidas,
   - filas fallidas.
+- Cada ejecución de lote persiste un reporte de operación para trazabilidad:
+  - `timestamp`,
+  - `strategy`,
+  - `affectedMatriculas`.
+- El historial de operaciones se visualiza en el paso final y puede exportarse como CSV (`operaciones_importacion.csv`).
 
 ## Errores por registro
 

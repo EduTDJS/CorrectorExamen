@@ -3,9 +3,11 @@ import { buildAuthHeaders } from './sessionService';
 
 export const STORAGE_DECISION_FINAL = 'corrector_decision_final';
 export const STORAGE_REPORTES = 'corrector_historial_reportes_v1';
+export const STORAGE_OPERACIONES_IMPORTACION = 'corrector_operaciones_importacion_v1';
 
 const SCHEMA_VERSION_REPORTES = 4;
 const SCHEMA_VERSION_DECISION_FINAL = 2;
+const SCHEMA_VERSION_OPERACIONES_IMPORTACION = 1;
 
 const decisionFinalInicial = {
   puntuacion: '',
@@ -208,6 +210,22 @@ const extraerReportesVersionados = (valor) => {
   return null;
 };
 
+const extraerOperacionesImportacionVersionadas = (valor) => {
+  if (Array.isArray(valor)) {
+    return { schemaVersion: 1, data: valor };
+  }
+
+  if (
+    esObjeto(valor)
+    && typeof valor.schemaVersion === 'number'
+    && Array.isArray(valor.data)
+  ) {
+    return { schemaVersion: valor.schemaVersion, data: valor.data };
+  }
+
+  return null;
+};
+
 const migrarReportes = (versionInicial, dataInicial) => {
   let version = versionInicial;
   let data = Array.isArray(dataInicial) ? dataInicial : [];
@@ -237,6 +255,25 @@ const migrarReportes = (versionInicial, dataInicial) => {
   return {
     schemaVersion: SCHEMA_VERSION_REPORTES,
     data: reportesValidados
+  };
+};
+
+const migrarOperacionesImportacion = (versionInicial, dataInicial) => {
+  let version = versionInicial;
+  let data = Array.isArray(dataInicial) ? dataInicial : [];
+
+  while (version < SCHEMA_VERSION_OPERACIONES_IMPORTACION) {
+    return null;
+  }
+
+  const operacionesValidadas = data
+    .map((operacion) => repararOperacionImportacion(operacion))
+    .filter(Boolean)
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+  return {
+    schemaVersion: SCHEMA_VERSION_OPERACIONES_IMPORTACION,
+    data: operacionesValidadas
   };
 };
 
@@ -288,6 +325,34 @@ export const guardarReportesLocalFallback = (reportes) => {
   const data = (Array.isArray(reportes) ? reportes : []).map((reporte) => repararReporte(reporte)).filter(Boolean);
   window.localStorage.setItem(STORAGE_REPORTES, JSON.stringify({
     schemaVersion: SCHEMA_VERSION_REPORTES,
+    data
+  }));
+};
+
+export const leerOperacionesImportacion = () => {
+  const crudo = window.localStorage.getItem(STORAGE_OPERACIONES_IMPORTACION);
+  if (!crudo) return [];
+
+  try {
+    const parseado = JSON.parse(crudo);
+    const payload = extraerOperacionesImportacionVersionadas(parseado);
+    if (!payload) return [];
+
+    const migrado = migrarOperacionesImportacion(payload.schemaVersion, payload.data);
+    return migrado?.data ?? [];
+  } catch {
+    return [];
+  }
+};
+
+export const guardarOperacionesImportacion = (operaciones) => {
+  const data = (Array.isArray(operaciones) ? operaciones : [])
+    .map((operacion) => repararOperacionImportacion(operacion))
+    .filter(Boolean)
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+  window.localStorage.setItem(STORAGE_OPERACIONES_IMPORTACION, JSON.stringify({
+    schemaVersion: SCHEMA_VERSION_OPERACIONES_IMPORTACION,
     data
   }));
 };
@@ -386,4 +451,25 @@ export const exportarReporteApi = async (reporteId) => {
   }
 
   return response.json();
+};
+const esOperacionImportacionValida = (operacion) => esObjeto(operacion)
+  && typeof operacion.id === 'string'
+  && typeof operacion.timestamp === 'string'
+  && typeof operacion.strategy === 'string'
+  && Array.isArray(operacion.affectedMatriculas)
+  && operacion.affectedMatriculas.every((item) => typeof item === 'string');
+
+const repararOperacionImportacion = (operacion) => {
+  if (!esObjeto(operacion)) return null;
+
+  const reparada = {
+    id: typeof operacion.id === 'string' ? operacion.id : crypto.randomUUID(),
+    timestamp: typeof operacion.timestamp === 'string' ? operacion.timestamp : new Date().toISOString(),
+    strategy: typeof operacion.strategy === 'string' ? operacion.strategy : 'omitir_existentes',
+    affectedMatriculas: Array.isArray(operacion.affectedMatriculas)
+      ? operacion.affectedMatriculas.map((item) => String(item || '').trim()).filter(Boolean)
+      : []
+  };
+
+  return esOperacionImportacionValida(reparada) ? reparada : null;
 };

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  guardarOperacionesImportacion,
   guardarReporteApi,
   guardarReportes,
+  leerOperacionesImportacion,
   leerReportes,
   listarReportesApi,
   normalizarNombreMateria
@@ -56,6 +58,7 @@ export const useReportes = () => {
   const [filtrosHistorial, setFiltrosHistorial] = useState({ materia: '', grupo: '', fecha: '' });
   const [usaBackend, setUsaBackend] = useState(null);
   const [errorSesion, setErrorSesion] = useState('');
+  const [operacionesImportacion, setOperacionesImportacion] = useState(() => leerOperacionesImportacion());
 
   useEffect(() => {
     let cancelado = false;
@@ -91,6 +94,10 @@ export const useReportes = () => {
     }
   }, [reportes, usaBackend]);
 
+  useEffect(() => {
+    guardarOperacionesImportacion(operacionesImportacion);
+  }, [operacionesImportacion]);
+
   const guardarReporte = async (reporte) => {
     if (usaBackend === false) {
       setReportes((previo) => {
@@ -119,6 +126,9 @@ export const useReportes = () => {
   };
 
   const reportesFiltrados = useMemo(() => reportes.filter((reporte) => {
+    if (!reporte || !reporte.examen) {
+      return false;
+    }
     const filtroMateriaNormalizada = normalizarNombreMateria(filtrosHistorial.materia);
     const materiaReporteNormalizada = reporte.organizacion?.materiaNormalizada
       || normalizarNombreMateria(reporte.examen.materia);
@@ -133,6 +143,23 @@ export const useReportes = () => {
     [reportesFiltrados]
   );
 
+  const guardarOperacionImportacion = (operacion) => {
+    const timestamp = typeof operacion?.timestamp === 'string' ? operacion.timestamp : new Date().toISOString();
+    const affectedMatriculas = Array.isArray(operacion?.affectedMatriculas)
+      ? operacion.affectedMatriculas.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+
+    const nuevaOperacion = {
+      id: String(operacion?.id || crypto.randomUUID()),
+      timestamp,
+      strategy: String(operacion?.strategy || ''),
+      affectedMatriculas
+    };
+
+    setOperacionesImportacion((previo) => [nuevaOperacion, ...previo].sort((a, b) => b.timestamp.localeCompare(a.timestamp)));
+    return nuevaOperacion;
+  };
+
   return {
     reportes,
     setReportes,
@@ -141,6 +168,8 @@ export const useReportes = () => {
     setFiltrosHistorial,
     reportesFiltrados,
     reportesAgrupadosPorMateria,
-    errorSesion
+    errorSesion,
+    operacionesImportacion,
+    guardarOperacionImportacion
   };
 };

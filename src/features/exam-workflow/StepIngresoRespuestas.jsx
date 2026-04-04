@@ -21,7 +21,10 @@ function StepIngresoRespuestas({
   onTextoImportacion,
   onAplicarFilaImportada,
   onRegistrarFilasImportadas,
-  resumenRegistroLote
+  resumenRegistroLote,
+  estrategiaConflictoImportacion,
+  onCambiarEstrategiaConflicto,
+  resumenEstrategiaImportacion
 }) {
   const [mostrarModalPegado, setMostrarModalPegado] = useState(false);
   const [textoPegado, setTextoPegado] = useState('');
@@ -174,6 +177,24 @@ function StepIngresoRespuestas({
                 <p className="detalle">
                   Mostrando {filasVisibles.length} de {filasFiltradas.length} filas
                   {busquedaFilas.trim() ? ` (filtradas de ${importacionEstado.filas.length})` : ''}.
+                </p>
+                <div className="acciones-importacion-lote">
+                  <label>
+                    Estrategia de conflicto
+                    <select
+                      value={estrategiaConflictoImportacion}
+                      onChange={(e) => onCambiarEstrategiaConflicto(e.target.value)}
+                    >
+                      <option value="omitir_existentes">omitir existentes</option>
+                      <option value="sobrescribir_por_matricula">sobrescribir por matrícula</option>
+                      <option value="crear_solo_nuevos">crear solo nuevos</option>
+                    </select>
+                  </label>
+                </div>
+                <p className="detalle">
+                  Según la estrategia: Creados {resumenEstrategiaImportacion.creados} ·
+                  {' '}Actualizados {resumenEstrategiaImportacion.actualizados} ·
+                  {' '}Omitidos {resumenEstrategiaImportacion.omitidos}
                 </p>
                 <div className="acciones-importacion-lote">
                   <button type="button" onClick={() => onRegistrarFilasImportadas()} aria-label="Registrar todas las filas válidas importadas">

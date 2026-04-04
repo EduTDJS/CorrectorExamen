@@ -15,7 +15,9 @@ function StepReporteFinal({
   estadisticasGrupo,
   exportarGrupoCSV,
   exportarCarpetaMateriaCSV,
-  errorSesion
+  errorSesion,
+  operacionesImportacion,
+  exportarOperacionesImportacion
 }) {
   return (
     <div className="paso">
@@ -103,6 +105,20 @@ function StepReporteFinal({
       </div>
 
       <button type="button" onClick={exportarGrupoCSV}>Exportar CSV grupal</button>
+      <div className="resumen">
+        <h4>Trazabilidad de importaciones por lote</h4>
+        <button type="button" onClick={exportarOperacionesImportacion}>Exportar operaciones de importación (CSV)</button>
+        {operacionesImportacion.length === 0 && <p className="detalle">Aún no hay operaciones registradas.</p>}
+        {operacionesImportacion.length > 0 && (
+          <ul>
+            {operacionesImportacion.slice(0, 10).map((operacion) => (
+              <li key={operacion.id}>
+                {new Date(operacion.timestamp).toLocaleString()} · {operacion.strategy} · Matrículas: {operacion.affectedMatriculas.join(', ') || 'ninguna'}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
