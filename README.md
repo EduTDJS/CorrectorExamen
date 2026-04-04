@@ -94,7 +94,7 @@ src/
 
 1. Configuración del examen (materia, grupo, fecha, total de preguntas, clave).
 2. Ingreso de respuestas por transcripción manual, carga de lote CSV/Excel o foto/escaneo.
-3. Procesamiento OCR en cliente con Tesseract.js y parser por número de pregunta.
+3. Procesamiento OCR en cliente con Tesseract.js y parser por número de pregunta con tolerancia a formatos manuscritos/ruidosos, segunda pasada por ventanas de tokens y resolución de duplicados por confianza.
 4. Revisión editable de respuestas en tabla antes de calificar.
 5. Revisión de calificaciones (aciertos, errores, porcentaje y puntaje) con desglose por pregunta basado en evidencia (clave, respuesta, estado, confianza OCR y fuente).
 6. Sugerencia de calificación con proveedor de IA configurable (`anthropic` u `openai`) usando prompt interno en español con criterios contables.
