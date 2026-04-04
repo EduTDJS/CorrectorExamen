@@ -16,47 +16,57 @@ reports (snapshot/proyección 1:1 con submissions por report_id)
    └────< audit_logs (N)
 
 rubrics (plantillas versionadas)
+
+rosters (listas por grupo/periodo) ────< roster_students (N)
 ```
 
 ## Entidades núcleo
 
 ### `schools`
+
 - Representa institución/tenant.
 - Clave primaria: `id`.
 - Campos principales: `tenant_id`, `name`, `created_at`, `updated_at`.
 
 ### `groups`
+
 - Cohorte o sección del examen.
 - FK: `school_id -> schools.id`.
 - Campos: `name`, `exam_date`, timestamps.
 
 ### `exams`
+
 - Configuración del examen.
 - FK: `group_id -> groups.id`.
 - Campos: `subject`, `exam_date`, `total_questions`, `answer_key`.
 
 ### `students`
+
 - Catálogo de estudiantes.
 - FK opcionales: `school_id`, `group_id`.
 - Campos: `name`, `enrollment` (matrícula), timestamps.
 
 ### `submissions`
+
 - Entrega de un estudiante para un examen.
 - FK: `exam_id`, `student_id`.
 - Relación 1:1 con `reports` por `report_id` (único).
 - Campos: `submitted_at`, `responses_json`, `source_text`, `ownership_json`.
 
 ### `grades`
+
 - Resultado evaluado de una entrega.
 - FK única: `submission_id -> submissions.id`.
 - Campos: `score`, `letter`, `teacher_justification`, `question_scores_json`, `ai_justifications_json`.
 
 ### `audit_logs`
+
 - Bitácora de acciones de persistencia.
 - FK: `report_id -> reports.id`.
 - Campos: `action`, `actor`, `created_at`, `metadata_json`.
 
 ### `report_versions`
+
 - Historial inmutable de snapshots por reporte.
 - FK: `report_id -> reports.id`.
 - Restricción de unicidad: `(report_id, version_number)`.
@@ -66,12 +76,14 @@ rubrics (plantillas versionadas)
   - cada actualización: inserta versión `n+1` y persiste diff mínimo sobre `calificacionFinal`.
 
 ### `rubrics`
+
 - Catálogo durable de plantillas por tenant/materia/grado.
 - Clave primaria: `id`.
 - Restricción de unicidad: `(tenant_id, materia, grado)`.
 - Campos: `tenant_id`, `materia`, `grado`, `current_version`, `created_at`, `updated_at`.
 
 ### `rubric_versions`
+
 - Historial inmutable de versiones por rúbrica.
 - FK: `rubric_id -> rubrics.id`.
 - Restricción de unicidad: `(rubric_id, version_number)`.
@@ -82,6 +94,26 @@ rubrics (plantillas versionadas)
 - Endpoints backend:
   - `GET /api/rubricas` admite filtros `materia`, `grado`, `version`, `rubricId`, `vigente`, `historial`.
   - `POST /api/rubricas` crea una nueva plantilla o una nueva versión incremental si ya existe plantilla para el mismo `id` o para la misma combinación `materia + grado` en el tenant.
+
+### `rosters`
+
+- Lista nominal de un grupo en un periodo académico.
+- Clave primaria: `id`.
+- Restricción de unicidad: `(group_name, term)`.
+- Campos: `group_name`, `term`, `created_at`, `updated_at`.
+
+### `roster_students`
+
+- Integrantes de una lista nominal (`rosters`).
+- FK: `roster_id -> rosters.id` con borrado en cascada.
+- Restricción de unicidad: `(roster_id, student_enrollment)`.
+- Campos: `student_name`, `student_enrollment`, timestamps.
+- Endpoints backend:
+  - `GET /api/rosters` acepta filtros `group` y `term`.
+  - `GET /api/rosters/:id` devuelve lista con su arreglo `students`.
+  - `POST /api/rosters` crea lista (`group`, `term`, `students`).
+  - `PUT /api/rosters/:id` reemplaza metadatos y estudiantes.
+  - `DELETE /api/rosters/:id` elimina la lista y sus estudiantes.
 
 ## Proyección/snapshot
 
@@ -110,6 +142,7 @@ El backend aplica migraciones incrementales con control de versión en `schema_m
 - **v3**: backfill inicial desde snapshots legacy cuando existe data previa.
 - **v4**: tabla `report_versions` + backfill inicial (versión `1`) desde `reports`.
 - **v5**: tablas `rubrics` + `rubric_versions` con índices y constraints de versionado durable por tenant.
+- **v6**: tablas `rosters` + `roster_students` para membresía de aula por grupo/periodo.
 
 Las migraciones viven en `backend/db/migrate.js`, y `backend/db/schema.sql` representa el estado consolidado esperado al final.
 
