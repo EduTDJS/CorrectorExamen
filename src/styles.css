@@ -33,6 +33,33 @@ body {
   color: #6b7280;
 }
 
+.menu-principal {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+}
+
+.menu-principal button {
+  background: #e5e7eb;
+  color: #1f2937;
+}
+
+.menu-principal button.activo {
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.landing ul,
+.lista-carpetas {
+  color: #374151;
+}
+
+.organizacion-panel code {
+  background: #e5e7eb;
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+}
+
 .pasos {
   display: grid;
   gap: 0.5rem;

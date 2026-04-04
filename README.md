@@ -92,6 +92,18 @@ src/
 
 ## Flujo implementado
 
+### Navegación principal (landing + menú)
+
+- **Inicio:** landing page con acceso rápido al flujo de corrección.
+- **Corrector:** mantiene el workflow guiado de 4 pasos (configuración, ingreso, revisión, reporte/exportación).
+- **Organización:** explica y visualiza la agrupación de reportes en “carpetas lógicas” por materia (`materiaFolderId`), útil para separar historial y exportaciones por asignatura.
+
+### Organización de carpetas por materia
+
+- Cada reporte guarda metadatos de organización (`organizacion.materiaNormalizada` y `organizacion.materiaFolderId`).
+- La agrupación es tolerante a variaciones de escritura (mayúsculas/acentos) gracias a la normalización de materia.
+- Recomendación operativa: definir un catálogo estable de nombres de materias para evitar carpetas duplicadas por variantes de texto.
+
 1. Configuración del examen (materia, grupo, fecha, total de preguntas, clave).
 2. Ingreso de respuestas por transcripción manual, carga de lote CSV/Excel o foto/escaneo.
 3. Procesamiento OCR en cliente con Tesseract.js y parser por número de pregunta con tolerancia a formatos manuscritos/ruidosos, segunda pasada por ventanas de tokens y resolución de duplicados por confianza.

@@ -21,6 +21,7 @@ describe('App - flujo guardar y exportar', () => {
 
   it('no duplica reportes al exportar varias veces un reporte guardado', async () => {
     render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Ir al corrector' }));
 
     fireEvent.change(screen.getByLabelText('Materia'), { target: { value: 'Contabilidad I' } });
     fireEvent.change(screen.getByLabelText('Grupo'), { target: { value: 'A-01' } });
@@ -61,6 +62,7 @@ describe('App - flujo guardar y exportar', () => {
 
   it('permite importar CSV y cargar una fila para corrección manual', async () => {
     render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Ir al corrector' }));
 
     fireEvent.change(screen.getByLabelText('Materia'), { target: { value: 'Física I' } });
     fireEvent.change(screen.getByLabelText('Grupo'), { target: { value: 'B-02' } });
@@ -99,6 +101,7 @@ describe('App - flujo guardar y exportar', () => {
 
   it('registra por lote filas válidas y muestra resumen de creados/actualizados/omitidos/fallidos', async () => {
     render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Ir al corrector' }));
 
     fireEvent.change(screen.getByLabelText('Materia'), { target: { value: 'Química I' } });
     fireEvent.change(screen.getByLabelText('Grupo'), { target: { value: 'C-03' } });
@@ -128,6 +131,7 @@ describe('App - flujo guardar y exportar', () => {
 
   it('carga plantilla de rúbrica y permite override manual docente', async () => {
     render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Ir al corrector' }));
 
     fireEvent.change(screen.getByLabelText('Plantilla de rúbrica'), {
       target: { value: 'rubrica-matematicas-6to-v1' }
