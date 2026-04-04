@@ -84,7 +84,7 @@ describe('App - flujo guardar y exportar', () => {
     });
 
     expect(await screen.findByText(/Leídas: 2 · Válidas: 1 · Errores: 1/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Cargar en formulario' }));
+    fireEvent.click(screen.getByRole('button', { name: /Cargar fila 2 de Ana Pérez en el formulario/ }));
 
     expect(screen.getByLabelText('Respuestas del estudiante (A/B/C/D)')).toHaveValue('ABCD');
 
@@ -95,6 +95,35 @@ describe('App - flujo guardar y exportar', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('Respuestas del estudiante (A/B/C/D)')).toHaveValue('DBCD');
     });
+  });
+
+  it('registra por lote filas válidas y muestra resumen de creados/actualizados/omitidos/fallidos', async () => {
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText('Materia'), { target: { value: 'Química I' } });
+    fireEvent.change(screen.getByLabelText('Grupo'), { target: { value: 'C-03' } });
+    fireEvent.change(screen.getByLabelText('Fecha'), { target: { value: '2026-03-26' } });
+    fireEvent.change(screen.getByLabelText('Nombre estudiante'), { target: { value: 'Temporal' } });
+    fireEvent.change(screen.getByLabelText('Matrícula estudiante'), { target: { value: 'TMP' } });
+    fireEvent.change(screen.getByLabelText('Total de preguntas'), { target: { value: '4' } });
+    fireEvent.change(screen.getByLabelText('Clave de respuestas (solo A/B/C/D)'), { target: { value: 'ABCD' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
+    await screen.findByLabelText('Respuestas del estudiante (A/B/C/D)');
+
+    const csv = [
+      'estudianteNombre,estudianteMatricula,respuestas',
+      'Ana Pérez,2026101,ABCD',
+      'Juan Díaz,2026102,ABCC'
+    ].join('\n');
+    const file = new File([csv], 'import.csv', { type: 'text/csv' });
+
+    fireEvent.change(screen.getByLabelText('Archivo de importación'), {
+      target: { files: [file] }
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /Registrar todas las filas válidas importadas/ }));
+
+    expect(await screen.findByText(/Registro por lote completado — Creados: 2 · Actualizados: 0 · Omitidos: 0 · Fallidos: 0/)).toBeInTheDocument();
   });
 
   it('carga plantilla de rúbrica y permite override manual docente', async () => {

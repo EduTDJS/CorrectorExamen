@@ -66,6 +66,7 @@ function App() {
     contrato: null,
     error: ''
   });
+  const [resumenRegistroLote, setResumenRegistroLote] = useState(null);
 
   const {
     pasoActual,
@@ -227,7 +228,63 @@ function App() {
     setErrores((previo) => ({ ...previo, respuestasEstudiante: '' }));
   };
 
+  const calcularDesgloseParaRespuestas = (listaRespuestas) => {
+    const respuestasTexto = limpiarRespuestas(listaRespuestas);
+    const total = totalPreguntasNumero > 0 ? totalPreguntasNumero : Math.max(claveLimpia.length, respuestasTexto.length);
+    const desgloseBaseFila = Array.from({ length: total }, (_, indice) => crearDesglosePregunta({
+      numero: indice + 1,
+      respuestaCorrecta: claveLimpia[indice] || '',
+      respuestaData: listaRespuestas[indice] || {},
+      puntosPorPregunta,
+      umbralBajaConfianza: UMBRAL_BAJA_CONFIANZA
+    }));
+
+    return calcularPuntajeRubrica({
+      desgloseBase: desgloseBaseFila,
+      rubrica: rubricaSeleccionada,
+      overridesDocente
+    });
+  };
+
+  const generarReporteDesdeFilaImportada = (fila, meta = {}) => {
+    const desgloseFila = calcularDesgloseParaRespuestas(fila.respuestasLista);
+    const puntajeFila = desgloseFila.reduce((acc, item) => acc + item.puntaje, 0);
+    const letraFila = mapearLetraPucmm(puntajeFila);
+
+    return {
+      id: meta.id || crypto.randomUUID(),
+      creadoEn: meta.creadoEn || new Date().toISOString(),
+      examen: {
+        materia: obtenerMateriaCanonica(datos.materia),
+        grupo: datos.grupo,
+        fecha: datos.fecha,
+        totalPreguntas: totalPreguntasNumero,
+        claveRespuestas: claveLimpia
+      },
+      estudiante: {
+        nombre: fila.estudianteNombre,
+        matricula: fila.estudianteMatricula
+      },
+      respuestas: {
+        lista: fila.respuestasLista,
+        texto: limpiarRespuestas(fila.respuestasLista)
+      },
+      puntuacionPorPregunta: desgloseFila,
+      justificacionesIA: desgloseFila.map((item) => ({
+        pregunta: item.numero,
+        justificacion: item.justificacionIA,
+        desglose: item.desglose
+      })),
+      calificacionFinal: {
+        notaSobre100: puntajeFila,
+        letra: letraFila,
+        justificacionDocente: decisionFinal.justificacion || 'Registro automático desde importación por lote.'
+      }
+    };
+  };
+
   const importarArchivoRespuestas = async (file) => {
+    setResumenRegistroLote(null);
     if (!file) {
       setImportacionEstado((previo) => ({
         ...previo,
@@ -258,6 +315,47 @@ function App() {
         error: error?.message || 'No se pudo importar el archivo.'
       }));
     }
+  };
+
+  const registrarFilasImportadas = async (filasSeleccionadas = null) => {
+    const filasObjetivo = Array.isArray(filasSeleccionadas) ? filasSeleccionadas : importacionEstado.filas;
+    if (!filasObjetivo.length || !validarPaso(0)) return;
+
+    const estadisticas = {
+      creados: 0,
+      actualizados: 0,
+      omitidos: 0,
+      fallidos: 0
+    };
+    const procesadasEnLote = new Set();
+    const existentesPorMatricula = new Map(
+      reportes
+        .filter((reporte) => reporte.examen?.materia === obtenerMateriaCanonica(datos.materia))
+        .map((reporte) => [String(reporte?.estudiante?.matricula || '').trim(), reporte])
+    );
+
+    for (const fila of filasObjetivo) {
+      const matricula = String(fila?.estudianteMatricula || '').trim();
+      if (!matricula || procesadasEnLote.has(matricula)) {
+        estadisticas.omitidos += 1;
+        continue;
+      }
+
+      procesadasEnLote.add(matricula);
+      const previo = existentesPorMatricula.get(matricula);
+      const reporte = generarReporteDesdeFilaImportada(fila, { id: previo?.id, creadoEn: previo?.creadoEn });
+
+      try {
+        await guardarReportePersistente(reporte);
+        setErrorSesionUi('');
+        if (previo) estadisticas.actualizados += 1;
+        else estadisticas.creados += 1;
+      } catch {
+        estadisticas.fallidos += 1;
+      }
+    }
+
+    setResumenRegistroLote(estadisticas);
   };
 
   const actualizarRespuesta = (indice, valor) => {
@@ -478,6 +576,8 @@ function App() {
             importacionEstado={importacionEstado}
             onArchivoImportacion={importarArchivoRespuestas}
             onAplicarFilaImportada={aplicarFilaImportada}
+            onRegistrarFilasImportadas={registrarFilasImportadas}
+            resumenRegistroLote={resumenRegistroLote}
           />
         )}
 
