@@ -1,5 +1,8 @@
-import http from 'node:http';
-import crypto from 'node:crypto';
+import http from "node:http";
+import crypto from "node:crypto";
+import { getDbPoolClient } from "./db/pool.js";
+import { sqlLiteral } from "./db/client.js";
+import { applyMigrations } from "./db/migrate.js";
 import {
   createReport,
   getReportById,
@@ -8,51 +11,53 @@ import {
   listReports,
   listReportVersions,
   updateReport,
-  deleteReport
-} from './repositories/reportRepository.js';
-import { createRubric, listRubrics } from './repositories/rubricRepository.js';
-import { AuthError, authenticate } from './middleware/auth.js';
-import { AuthorizationError, authorize } from './middleware/authorize.js';
-import { RATE_LIMIT_CONFIG, getRateLimitPolicy } from './config/rateLimit.js';
+  deleteReport,
+} from "./repositories/reportRepository.js";
+import { createRubric, listRubrics } from "./repositories/rubricRepository.js";
+import { AuthError, authenticate } from "./middleware/auth.js";
+import { AuthorizationError, authorize } from "./middleware/authorize.js";
+import { RATE_LIMIT_CONFIG, getRateLimitPolicy } from "./config/rateLimit.js";
 import {
   createProviderOrchestrator,
   ProviderIntegrationError,
-  PROVIDER_ERRORS
-} from './ai/providerOrchestrator.js';
+  PROVIDER_ERRORS,
+} from "./ai/providerOrchestrator.js";
 
 const PORT = Number(process.env.PORT || 8787);
-const INTERNAL_AUTH_TOKEN = process.env.INTERNAL_AUTH_TOKEN || '';
-const INTERNAL_AUTH_HEADER = (process.env.INTERNAL_AUTH_HEADER || 'x-internal-token').toLowerCase();
+const INTERNAL_AUTH_TOKEN = process.env.INTERNAL_AUTH_TOKEN || "";
+const INTERNAL_AUTH_HEADER = (
+  process.env.INTERNAL_AUTH_HEADER || "x-internal-token"
+).toLowerCase();
 
 const API_ERRORS = {
-  UNAUTHORIZED: 'internal_auth_unauthorized',
-  RATE_LIMITED: 'rate_limit_exceeded',
-  BAD_REQUEST: 'bad_request',
-  NOT_FOUND: 'not_found',
-  PAYLOAD: 'payload_validation_error'
+  UNAUTHORIZED: "internal_auth_unauthorized",
+  RATE_LIMITED: "rate_limit_exceeded",
+  BAD_REQUEST: "bad_request",
+  NOT_FOUND: "not_found",
+  PAYLOAD: "payload_validation_error",
 };
 
 const sendJson = (res, statusCode, body, { requestId } = {}) => {
   const headers = {
-    'Content-Type': 'application/json; charset=utf-8'
+    "Content-Type": "application/json; charset=utf-8",
   };
   if (requestId) {
-    headers['X-Request-Id'] = requestId;
+    headers["X-Request-Id"] = requestId;
   }
 
   res.writeHead(statusCode, {
-    ...headers
+    ...headers,
   });
   res.end(JSON.stringify(body));
 };
 
 const getOrCreateRequestId = (req) => {
-  const incoming = String(req.headers['x-request-id'] || '').trim();
+  const incoming = String(req.headers["x-request-id"] || "").trim();
   if (incoming) {
     return incoming;
   }
 
-  if (typeof crypto.randomUUID === 'function') {
+  if (typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
 
@@ -64,11 +69,12 @@ const safePayloadMetadata = (payload = {}) => {
   const puntaje = payload?.puntaje;
 
   return {
-    hasDatos: Boolean(datos && typeof datos === 'object'),
-    datosKeys: datos && typeof datos === 'object' ? Object.keys(datos).sort() : [],
+    hasDatos: Boolean(datos && typeof datos === "object"),
+    datosKeys:
+      datos && typeof datos === "object" ? Object.keys(datos).sort() : [],
     puntajeType: typeof puntaje,
     hasPuntaje: puntaje !== undefined,
-    payloadSizeBytes: Buffer.byteLength(JSON.stringify(payload || {}), 'utf8')
+    payloadSizeBytes: Buffer.byteLength(JSON.stringify(payload || {}), "utf8"),
   };
 };
 
@@ -90,15 +96,15 @@ const logEvent = ({
   to,
   circuitState,
   attempts,
-  rateLimit
+  rateLimit,
 }) => {
   const entry = {
     timestamp: new Date().toISOString(),
-    level: errorCode ? 'error' : 'info',
+    level: errorCode ? "error" : "info",
     event,
     requestId,
     method,
-    path
+    path,
   };
 
   if (status !== undefined) {
@@ -147,32 +153,33 @@ const logEvent = ({
   process.stdout.write(`${JSON.stringify(entry)}\n`);
 };
 
-const parseBody = (req) => new Promise((resolve, reject) => {
-  let body = '';
+const parseBody = (req) =>
+  new Promise((resolve, reject) => {
+    let body = "";
 
-  req.on('data', (chunk) => {
-    body += chunk;
-    if (body.length > 1_000_000) {
-      reject(new Error('Payload demasiado grande.'));
-      req.destroy();
-    }
+    req.on("data", (chunk) => {
+      body += chunk;
+      if (body.length > 1_000_000) {
+        reject(new Error("Payload demasiado grande."));
+        req.destroy();
+      }
+    });
+
+    req.on("end", () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch {
+        reject(new Error("JSON inválido en la solicitud."));
+      }
+    });
+
+    req.on("error", reject);
   });
-
-  req.on('end', () => {
-    try {
-      resolve(body ? JSON.parse(body) : {});
-    } catch {
-      reject(new Error('JSON inválido en la solicitud.'));
-    }
-  });
-
-  req.on('error', reject);
-});
 
 class ApiError extends Error {
   constructor(message, { status = 400, code = API_ERRORS.BAD_REQUEST } = {}) {
     super(message);
-    this.name = 'ApiError';
+    this.name = "ApiError";
     this.status = status;
     this.code = code;
   }
@@ -181,7 +188,7 @@ class ApiError extends Error {
 const requestBuckets = new Map();
 let rateLimitCleanupTimer = null;
 let lastBucketCountLogAt = 0;
-const METRICS_ENDPOINT_KEY = '/api/calificacion/sugerir';
+const METRICS_ENDPOINT_KEY = "/api/calificacion/sugerir";
 const endpointMetrics = new Map();
 
 const getOrCreateEndpointMetrics = (endpoint) => {
@@ -189,7 +196,7 @@ const getOrCreateEndpointMetrics = (endpoint) => {
     endpointMetrics.set(endpoint, {
       totalRequests: 0,
       totalErrors: 0,
-      latenciesMs: []
+      latenciesMs: [],
     });
   }
   return endpointMetrics.get(endpoint);
@@ -221,7 +228,10 @@ const collectMetricsSnapshot = () => {
   for (const [endpoint, metrics] of endpointMetrics.entries()) {
     totalRequests += metrics.totalRequests;
     totalErrors += metrics.totalErrors;
-    const errorRate = metrics.totalRequests > 0 ? metrics.totalErrors / metrics.totalRequests : 0;
+    const errorRate =
+      metrics.totalRequests > 0
+        ? metrics.totalErrors / metrics.totalRequests
+        : 0;
 
     endpoints[endpoint] = {
       total_requests: metrics.totalRequests,
@@ -230,8 +240,8 @@ const collectMetricsSnapshot = () => {
       latency_ms: {
         p50: quantile(metrics.latenciesMs, 0.5),
         p95: quantile(metrics.latenciesMs, 0.95),
-        samples: metrics.latenciesMs.length
-      }
+        samples: metrics.latenciesMs.length,
+      },
     };
   }
 
@@ -239,30 +249,43 @@ const collectMetricsSnapshot = () => {
     generated_at: new Date().toISOString(),
     total_requests: totalRequests,
     total_errors: totalErrors,
-    error_rate: totalRequests > 0 ? Number((totalErrors / totalRequests).toFixed(6)) : 0,
-    endpoints
+    error_rate:
+      totalRequests > 0 ? Number((totalErrors / totalRequests).toFixed(6)) : 0,
+    endpoints,
   };
 };
 
 const asPrometheusMetrics = (snapshot) => {
   const lines = [
-    '# TYPE correctorexamen_total_requests counter',
+    "# TYPE correctorexamen_total_requests counter",
     `correctorexamen_total_requests ${snapshot.total_requests}`,
-    '# TYPE correctorexamen_total_errors counter',
+    "# TYPE correctorexamen_total_errors counter",
     `correctorexamen_total_errors ${snapshot.total_errors}`,
-    '# TYPE correctorexamen_error_rate gauge',
-    `correctorexamen_error_rate ${snapshot.error_rate}`
+    "# TYPE correctorexamen_error_rate gauge",
+    `correctorexamen_error_rate ${snapshot.error_rate}`,
   ];
 
-  for (const [endpoint, endpointSnapshot] of Object.entries(snapshot.endpoints)) {
-    lines.push(`correctorexamen_endpoint_total_requests{endpoint="${endpoint}"} ${endpointSnapshot.total_requests}`);
-    lines.push(`correctorexamen_endpoint_total_errors{endpoint="${endpoint}"} ${endpointSnapshot.total_errors}`);
-    lines.push(`correctorexamen_endpoint_error_rate{endpoint="${endpoint}"} ${endpointSnapshot.error_rate}`);
-    lines.push(`correctorexamen_endpoint_latency_ms_p50{endpoint="${endpoint}"} ${endpointSnapshot.latency_ms.p50}`);
-    lines.push(`correctorexamen_endpoint_latency_ms_p95{endpoint="${endpoint}"} ${endpointSnapshot.latency_ms.p95}`);
+  for (const [endpoint, endpointSnapshot] of Object.entries(
+    snapshot.endpoints,
+  )) {
+    lines.push(
+      `correctorexamen_endpoint_total_requests{endpoint="${endpoint}"} ${endpointSnapshot.total_requests}`,
+    );
+    lines.push(
+      `correctorexamen_endpoint_total_errors{endpoint="${endpoint}"} ${endpointSnapshot.total_errors}`,
+    );
+    lines.push(
+      `correctorexamen_endpoint_error_rate{endpoint="${endpoint}"} ${endpointSnapshot.error_rate}`,
+    );
+    lines.push(
+      `correctorexamen_endpoint_latency_ms_p50{endpoint="${endpoint}"} ${endpointSnapshot.latency_ms.p50}`,
+    );
+    lines.push(
+      `correctorexamen_endpoint_latency_ms_p95{endpoint="${endpoint}"} ${endpointSnapshot.latency_ms.p95}`,
+    );
   }
 
-  return `${lines.join('\n')}\n`;
+  return `${lines.join("\n")}\n`;
 };
 
 const cleanupExpiredBuckets = (buckets, now = Date.now()) => {
@@ -291,7 +314,10 @@ const enforceBucketCapacity = (buckets, maxBuckets) => {
       const lastSeenAt = Number(bucket?.lastSeenAt || 0);
       const resetAt = Number(bucket?.resetAt || 0);
 
-      if (lastSeenAt < oldestSeenAt || (lastSeenAt === oldestSeenAt && resetAt < oldestResetAt)) {
+      if (
+        lastSeenAt < oldestSeenAt ||
+        (lastSeenAt === oldestSeenAt && resetAt < oldestResetAt)
+      ) {
         oldestSeenAt = lastSeenAt;
         oldestResetAt = resetAt;
         oldestKey = key;
@@ -308,26 +334,45 @@ const enforceBucketCapacity = (buckets, maxBuckets) => {
   return evicted;
 };
 
-const emitBucketCountMetric = ({ requestId, method, path, reason, force = false, now = Date.now() }) => {
-  if (!force && now - lastBucketCountLogAt < RATE_LIMIT_CONFIG.bucketCountLogIntervalMs) {
+const emitBucketCountMetric = ({
+  requestId,
+  method,
+  path,
+  reason,
+  force = false,
+  now = Date.now(),
+}) => {
+  if (
+    !force &&
+    now - lastBucketCountLogAt < RATE_LIMIT_CONFIG.bucketCountLogIntervalMs
+  ) {
     return;
   }
   lastBucketCountLogAt = now;
   logEvent({
     requestId,
-    event: 'rate_limit_bucket_count',
-    method: method || 'SYSTEM',
-    path: path || 'rate_limit',
+    event: "rate_limit_bucket_count",
+    method: method || "SYSTEM",
+    path: path || "rate_limit",
     metrics: {
       rate_limit_bucket_count: requestBuckets.size,
-      reason
-    }
+      reason,
+    },
   });
 };
 
-const runBucketMaintenance = ({ now = Date.now(), requestId, method, path, reason }) => {
+const runBucketMaintenance = ({
+  now = Date.now(),
+  requestId,
+  method,
+  path,
+  reason,
+}) => {
   const removedExpired = cleanupExpiredBuckets(requestBuckets, now);
-  const evicted = enforceBucketCapacity(requestBuckets, RATE_LIMIT_CONFIG.maxBuckets);
+  const evicted = enforceBucketCapacity(
+    requestBuckets,
+    RATE_LIMIT_CONFIG.maxBuckets,
+  );
   const mustForceLog = removedExpired > 0 || evicted > 0;
   emitBucketCountMetric({
     requestId,
@@ -335,7 +380,7 @@ const runBucketMaintenance = ({ now = Date.now(), requestId, method, path, reaso
     path,
     reason,
     force: mustForceLog,
-    now
+    now,
   });
 
   return { removedExpired, evicted };
@@ -346,9 +391,9 @@ const startRateLimitJanitor = () => {
     return;
   }
   rateLimitCleanupTimer = setInterval(() => {
-    runBucketMaintenance({ reason: 'periodic_cleanup' });
+    runBucketMaintenance({ reason: "periodic_cleanup" });
   }, RATE_LIMIT_CONFIG.cleanupIntervalMs);
-  if (typeof rateLimitCleanupTimer.unref === 'function') {
+  if (typeof rateLimitCleanupTimer.unref === "function") {
     rateLimitCleanupTimer.unref();
   }
 };
@@ -361,35 +406,37 @@ const stopRateLimitJanitor = () => {
 };
 
 const getClientIp = (req) => {
-  const forwardedFor = req.headers['x-forwarded-for'];
-  if (typeof forwardedFor === 'string' && forwardedFor.trim()) {
-    return forwardedFor.split(',')[0].trim();
+  const forwardedFor = req.headers["x-forwarded-for"];
+  if (typeof forwardedFor === "string" && forwardedFor.trim()) {
+    return forwardedFor.split(",")[0].trim();
   }
 
-  return req.socket?.remoteAddress || 'unknown';
+  return req.socket?.remoteAddress || "unknown";
 };
 
 const getRateLimitIdentifier = (req) => {
-  const token = String(req.headers[INTERNAL_AUTH_HEADER] || '').trim();
+  const token = String(req.headers[INTERNAL_AUTH_HEADER] || "").trim();
   const ip = getClientIp(req);
-  const tenantId = String(req.user?.tenantId || req.user?.institution || '').trim();
-  const userId = String(req.user?.userId || '').trim();
+  const tenantId = String(
+    req.user?.tenantId || req.user?.institution || "",
+  ).trim();
+  const userId = String(req.user?.userId || "").trim();
 
   if (tenantId && userId) {
     return `tenant:${tenantId}:user:${userId}`;
   }
 
-  if (RATE_LIMIT_CONFIG.keyStrategy === 'authenticated' && tenantId) {
+  if (RATE_LIMIT_CONFIG.keyStrategy === "authenticated" && tenantId) {
     return `tenant:${tenantId}:anonymous`;
   }
-  if (RATE_LIMIT_CONFIG.keyStrategy === 'token' && token) {
+  if (RATE_LIMIT_CONFIG.keyStrategy === "token" && token) {
     return `token:${token}`;
   }
-  if (RATE_LIMIT_CONFIG.keyStrategy === 'ip') {
+  if (RATE_LIMIT_CONFIG.keyStrategy === "ip") {
     return `ip:${ip}`;
   }
 
-  if (RATE_LIMIT_CONFIG.keyStrategy === 'authenticated_or_token_or_ip') {
+  if (RATE_LIMIT_CONFIG.keyStrategy === "authenticated_or_token_or_ip") {
     return token ? `token:${token}` : `ip:${ip}`;
   }
 
@@ -398,32 +445,49 @@ const getRateLimitIdentifier = (req) => {
 
 const assertInternalToken = (req) => {
   if (!INTERNAL_AUTH_TOKEN) {
-    throw new ApiError('INTERNAL_AUTH_TOKEN no está configurada en el servidor.', {
-      status: 500,
-      code: PROVIDER_ERRORS.CONFIG
-    });
+    throw new ApiError(
+      "INTERNAL_AUTH_TOKEN no está configurada en el servidor.",
+      {
+        status: 500,
+        code: PROVIDER_ERRORS.CONFIG,
+      },
+    );
   }
 
-  const receivedToken = String(req.headers[INTERNAL_AUTH_HEADER] || '').trim();
+  const receivedToken = String(req.headers[INTERNAL_AUTH_HEADER] || "").trim();
   if (!receivedToken || receivedToken !== INTERNAL_AUTH_TOKEN) {
-    throw new ApiError('No autorizado: token interno inválido o ausente.', {
+    throw new ApiError("No autorizado: token interno inválido o ausente.", {
       status: 401,
-      code: API_ERRORS.UNAUTHORIZED
+      code: API_ERRORS.UNAUTHORIZED,
     });
   }
 };
 
 const assertRateLimit = ({ req, requestId, method, path }) => {
   const now = Date.now();
-  runBucketMaintenance({ now, requestId, method, path, reason: 'opportunistic_assert' });
+  runBucketMaintenance({
+    now,
+    requestId,
+    method,
+    path,
+    reason: "opportunistic_assert",
+  });
   const key = getRateLimitIdentifier(req);
-  const { maxRequests, windowMs, nearThresholdRatio } = getRateLimitPolicy(req.user?.role);
+  const { maxRequests, windowMs, nearThresholdRatio } = getRateLimitPolicy(
+    req.user?.role,
+  );
   let bucket = requestBuckets.get(key);
 
   if (!bucket || now >= bucket.resetAt) {
     bucket = { count: 0, resetAt: now + windowMs, lastSeenAt: now };
     requestBuckets.set(key, bucket);
-    runBucketMaintenance({ now, requestId, method, path, reason: 'after_bucket_create' });
+    runBucketMaintenance({
+      now,
+      requestId,
+      method,
+      path,
+      reason: "after_bucket_create",
+    });
   }
 
   bucket.lastSeenAt = now;
@@ -432,396 +496,656 @@ const assertRateLimit = ({ req, requestId, method, path }) => {
   const ratio = bucket.count / maxRequests;
   const rateLimitSnapshot = {
     key,
-    role: req.user?.role || 'anonymous',
+    role: req.user?.role || "anonymous",
     tenantId: req.user?.tenantId || req.user?.institution || null,
     userId: req.user?.userId || null,
     count: bucket.count,
     maxRequests,
     windowMs,
     remainingMs: Math.max(bucket.resetAt - now, 0),
-    thresholdRatio: Number(ratio.toFixed(2))
+    thresholdRatio: Number(ratio.toFixed(2)),
   };
 
   if (ratio >= nearThresholdRatio) {
     logEvent({
       requestId,
-      event: 'rate_limit_saturation',
+      event: "rate_limit_saturation",
       method,
       path,
       status: bucket.count > maxRequests ? 429 : 200,
       rateLimit: {
         ...rateLimitSnapshot,
         nearThreshold: true,
-        rejected: bucket.count > maxRequests
-      }
+        rejected: bucket.count > maxRequests,
+      },
     });
   }
 
   if (bucket.count > maxRequests) {
-    throw new ApiError('Límite de solicitudes excedido. Intenta nuevamente más tarde.', {
-      status: 429,
-      code: API_ERRORS.RATE_LIMITED
-    });
+    throw new ApiError(
+      "Límite de solicitudes excedido. Intenta nuevamente más tarde.",
+      {
+        status: 429,
+        code: API_ERRORS.RATE_LIMITED,
+      },
+    );
   }
 };
 
 const orchestrator = createProviderOrchestrator({
   onEvent: (eventData) => {
     logEvent(eventData);
-  }
+  },
 });
 
 const validarPayload = (payload) => {
   const { datos, puntaje } = payload || {};
 
-  if (!datos || typeof datos !== 'object') {
-    throw new ProviderIntegrationError('El campo "datos" es obligatorio.', { status: 400, code: PROVIDER_ERRORS.PAYLOAD });
+  if (!datos || typeof datos !== "object") {
+    throw new ProviderIntegrationError('El campo "datos" es obligatorio.', {
+      status: 400,
+      code: PROVIDER_ERRORS.PAYLOAD,
+    });
   }
 
   if (!Number.isFinite(Number(puntaje))) {
-    throw new ProviderIntegrationError('El campo "puntaje" debe ser numérico.', { status: 400, code: PROVIDER_ERRORS.PAYLOAD });
+    throw new ProviderIntegrationError(
+      'El campo "puntaje" debe ser numérico.',
+      { status: 400, code: PROVIDER_ERRORS.PAYLOAD },
+    );
   }
 
   return { datos, puntaje };
 };
 
 const validarPayloadReporte = (payload) => {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    throw new ApiError('El payload de reporte debe ser un objeto JSON.', {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new ApiError("El payload de reporte debe ser un objeto JSON.", {
       status: 400,
-      code: API_ERRORS.PAYLOAD
+      code: API_ERRORS.PAYLOAD,
     });
   }
 
-  if (!payload.examen || typeof payload.examen !== 'object') {
+  if (!payload.examen || typeof payload.examen !== "object") {
     throw new ApiError('El campo "examen" es obligatorio.', {
       status: 400,
-      code: API_ERRORS.PAYLOAD
+      code: API_ERRORS.PAYLOAD,
     });
   }
 
-  if (!payload.estudiante || typeof payload.estudiante !== 'object') {
+  if (!payload.estudiante || typeof payload.estudiante !== "object") {
     throw new ApiError('El campo "estudiante" es obligatorio.', {
       status: 400,
-      code: API_ERRORS.PAYLOAD
+      code: API_ERRORS.PAYLOAD,
     });
   }
 
   return payload;
 };
 
-const runProtectedAction = async ({ req, res, requestId, action, resource, onAllowed }) => {
+const sanitizeRosterStudent = (student = {}) => ({
+  nombre: String(
+    student.nombre || student.name || student.student_name || "",
+  ).trim(),
+  matricula: String(
+    student.matricula || student.enrollment || student.student_enrollment || "",
+  ).trim(),
+});
+
+const normalizeRosterPayload = (payload = {}) => {
+  const group = String(
+    payload.group || payload.groupName || payload.grupo || "",
+  ).trim();
+  const term = String(
+    payload.term || payload.period || payload.periodo || "",
+  ).trim();
+  const studentsRaw = Array.isArray(payload.students) ? payload.students : [];
+  const dedupe = new Set();
+  const students = studentsRaw
+    .map(sanitizeRosterStudent)
+    .filter((student) => student.nombre && student.matricula)
+    .filter((student) => {
+      const key = student.matricula.toLowerCase();
+      if (dedupe.has(key)) {
+        return false;
+      }
+      dedupe.add(key);
+      return true;
+    });
+
+  if (!group) {
+    throw new ApiError('El campo "group" es obligatorio para la lista.', {
+      status: 400,
+      code: API_ERRORS.PAYLOAD,
+    });
+  }
+  if (!term) {
+    throw new ApiError('El campo "term" es obligatorio para la lista.', {
+      status: 400,
+      code: API_ERRORS.PAYLOAD,
+    });
+  }
+  if (!students.length) {
+    throw new ApiError(
+      'Debe incluir al menos un estudiante válido en "students".',
+      { status: 400, code: API_ERRORS.PAYLOAD },
+    );
+  }
+
+  return { group, term, students };
+};
+
+const mapRosterRow = (row) => ({
+  id: row.id,
+  group: row.group_name,
+  term: row.term,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const listRosters = async ({ group, term } = {}) => {
+  await applyMigrations();
+  const client = await getDbPoolClient();
+  const filters = [];
+  if (group) {
+    filters.push(`group_name = ${sqlLiteral(group)}`);
+  }
+  if (term) {
+    filters.push(`term = ${sqlLiteral(term)}`);
+  }
+  const whereClause = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
+  const rows = await client.all(`
+    SELECT id, group_name, term, created_at, updated_at
+    FROM rosters
+    ${whereClause}
+    ORDER BY updated_at DESC;
+  `);
+  return rows.map(mapRosterRow);
+};
+
+const getRosterById = async (rosterId) => {
+  await applyMigrations();
+  const client = await getDbPoolClient();
+  const roster = await client.get(`
+    SELECT id, group_name, term, created_at, updated_at
+    FROM rosters
+    WHERE id = ${sqlLiteral(rosterId)}
+    LIMIT 1;
+  `);
+  if (!roster) {
+    return null;
+  }
+  const students = await client.all(`
+    SELECT id, student_name, student_enrollment, created_at, updated_at
+    FROM roster_students
+    WHERE roster_id = ${sqlLiteral(rosterId)}
+    ORDER BY student_name ASC, student_enrollment ASC;
+  `);
+  return {
+    ...mapRosterRow(roster),
+    students: students.map((student) => ({
+      id: student.id,
+      nombre: student.student_name,
+      matricula: student.student_enrollment,
+      createdAt: student.created_at,
+      updatedAt: student.updated_at,
+    })),
+  };
+};
+
+const upsertRoster = async ({ rosterId, payload }) => {
+  await applyMigrations();
+  const client = await getDbPoolClient();
+  const normalized = normalizeRosterPayload(payload);
+  const nowIso = new Date().toISOString();
+  const persistedRosterId = rosterId || `roster_${crypto.randomUUID()}`;
+  const updateExpr = rosterId
+    ? `updated_at = ${sqlLiteral(nowIso)}`
+    : `created_at = ${sqlLiteral(nowIso)}, updated_at = ${sqlLiteral(nowIso)}`;
+
+  await client.exec(`
+    BEGIN IMMEDIATE TRANSACTION;
+    INSERT INTO rosters (id, group_name, term, created_at, updated_at)
+    VALUES (
+      ${sqlLiteral(persistedRosterId)},
+      ${sqlLiteral(normalized.group)},
+      ${sqlLiteral(normalized.term)},
+      ${sqlLiteral(nowIso)},
+      ${sqlLiteral(nowIso)}
+    )
+    ON CONFLICT(id) DO UPDATE SET
+      group_name = excluded.group_name,
+      term = excluded.term,
+      ${updateExpr};
+
+    DELETE FROM roster_students WHERE roster_id = ${sqlLiteral(persistedRosterId)};
+    ${normalized.students
+      .map(
+        (student) => `
+      INSERT INTO roster_students (id, roster_id, student_name, student_enrollment, created_at, updated_at)
+      VALUES (
+        ${sqlLiteral(`rostu_${crypto.randomUUID()}`)},
+        ${sqlLiteral(persistedRosterId)},
+        ${sqlLiteral(student.nombre)},
+        ${sqlLiteral(student.matricula)},
+        ${sqlLiteral(nowIso)},
+        ${sqlLiteral(nowIso)}
+      );
+    `,
+      )
+      .join("\n")}
+    COMMIT;
+  `);
+
+  return getRosterById(persistedRosterId);
+};
+
+const runProtectedAction = async ({
+  req,
+  res,
+  requestId,
+  action,
+  resource,
+  onAllowed,
+}) => {
   try {
     authenticate(req);
     authorize(req, action);
     return await onAllowed();
   } catch (error) {
-    const status = error instanceof AuthError || error instanceof AuthorizationError ? error.status : 500;
-    const code = error instanceof AuthError || error instanceof AuthorizationError ? error.code : API_ERRORS.BAD_REQUEST;
-    const actor = req.user ? { userId: req.user.userId, role: req.user.role } : undefined;
+    const status =
+      error instanceof AuthError || error instanceof AuthorizationError
+        ? error.status
+        : 500;
+    const code =
+      error instanceof AuthError || error instanceof AuthorizationError
+        ? error.code
+        : API_ERRORS.BAD_REQUEST;
+    const actor = req.user
+      ? { userId: req.user.userId, role: req.user.role }
+      : undefined;
     logEvent({
       requestId,
-      event: status === 401 ? 'authentication_failed' : 'authorization_denied',
+      event: status === 401 ? "authentication_failed" : "authorization_denied",
       method: req.method,
-      path: req.url || '/',
+      path: req.url || "/",
       status,
       errorCode: code,
       actor,
-      resource
+      resource,
     });
-    sendJson(res, status, {
-      error: {
-        message: error?.message || 'No autorizado.',
-        code,
-        requestId
-      }
-    }, { requestId });
+    sendJson(
+      res,
+      status,
+      {
+        error: {
+          message: error?.message || "No autorizado.",
+          code,
+          requestId,
+        },
+      },
+      { requestId },
+    );
     return undefined;
   }
 };
 
-const mustRestrictByUserId = (role) => ['docente', 'corrector'].includes(String(role || '').trim());
+const mustRestrictByUserId = (role) =>
+  ["docente", "corrector"].includes(String(role || "").trim());
 
 const getReportAccessScope = (user = {}) => ({
-  tenantId: String(user.tenantId || user.institution || '').trim(),
-  userId: String(user.userId || '').trim(),
-  enforceUserScope: mustRestrictByUserId(user.role)
+  tenantId: String(user.tenantId || user.institution || "").trim(),
+  userId: String(user.userId || "").trim(),
+  enforceUserScope: mustRestrictByUserId(user.role),
 });
 
 const sendForbiddenReportAccess = ({ req, res, requestId, resource }) => {
-  const reportId = decodeURIComponent((req.url || '').replace('/api/reportes/', '').replace('/export', '').trim());
+  const reportId = decodeURIComponent(
+    (req.url || "").replace("/api/reportes/", "").replace("/export", "").trim(),
+  );
   logEvent({
     requestId,
-    event: 'report_scope_denied',
+    event: "report_scope_denied",
     method: req.method,
-    path: req.url || '/',
+    path: req.url || "/",
     status: 403,
-    errorCode: 'auth_forbidden',
-    actor: req.user ? { userId: req.user.userId, role: req.user.role } : undefined,
+    errorCode: "auth_forbidden",
+    actor: req.user
+      ? { userId: req.user.userId, role: req.user.role }
+      : undefined,
     resource: {
-      action: 'scope_validation',
-      type: 'report',
-      id: reportId || 'unknown',
+      action: "scope_validation",
+      type: "report",
+      id: reportId || "unknown",
       tenantId: req.user?.tenantId || req.user?.institution,
       endpoint: resource,
-      timestamp: new Date().toISOString()
-    }
+      timestamp: new Date().toISOString(),
+    },
   });
-  sendJson(res, 403, {
-    error: {
-      message: 'Acceso denegado: el reporte pertenece a otro tenant o usuario.',
-      code: 'auth_forbidden',
-      requestId
-    }
-  }, { requestId });
+  sendJson(
+    res,
+    403,
+    {
+      error: {
+        message:
+          "Acceso denegado: el reporte pertenece a otro tenant o usuario.",
+        code: "auth_forbidden",
+        requestId,
+      },
+    },
+    { requestId },
+  );
 };
 
-const logReportAuditEvent = ({ requestId, req, event, reportId, status, action, resource }) => {
+const logReportAuditEvent = ({
+  requestId,
+  req,
+  event,
+  reportId,
+  status,
+  action,
+  resource,
+}) => {
   logEvent({
     requestId,
     event,
     method: req.method,
-    path: req.url || '/',
+    path: req.url || "/",
     status,
-    actor: req.user ? { userId: req.user.userId, role: req.user.role, tenantId: req.user.tenantId || req.user.institution } : undefined,
+    actor: req.user
+      ? {
+          userId: req.user.userId,
+          role: req.user.role,
+          tenantId: req.user.tenantId || req.user.institution,
+        }
+      : undefined,
     resource: {
       action,
-      type: 'report',
+      type: "report",
       id: reportId,
       tenantId: req.user?.tenantId || req.user?.institution,
       endpoint: resource,
-      timestamp: new Date().toISOString()
-    }
+      timestamp: new Date().toISOString(),
+    },
   });
 };
 
 const handler = async (req, res) => {
   const requestId = getOrCreateRequestId(req);
   const startedAt = Date.now();
-  const requestPath = req.url || '/';
+  const requestPath = req.url || "/";
 
   logEvent({
     requestId,
-    event: 'request_started',
+    event: "request_started",
     method: req.method,
-    path: requestPath
+    path: requestPath,
   });
 
-  if (req.method === 'GET' && req.url === '/api/calificacion/proveedor') {
+  if (req.method === "GET" && req.url === "/api/calificacion/proveedor") {
     const status = orchestrator.getStatus();
-    sendJson(res, 200, {
-      proveedor: status.primary?.name,
-      modelo: status.primary?.model,
-      secundario: status.secondary,
-      fallback: status.fallback,
-      timeoutMs: status.timeoutMs
-    }, { requestId });
+    sendJson(
+      res,
+      200,
+      {
+        proveedor: status.primary?.name,
+        modelo: status.primary?.model,
+        secundario: status.secondary,
+        fallback: status.fallback,
+        timeoutMs: status.timeoutMs,
+      },
+      { requestId },
+    );
     logEvent({
       requestId,
-      event: 'request_completed',
+      event: "request_completed",
       method: req.method,
       path: requestPath,
       status: 200,
-      durationMs: Date.now() - startedAt
+      durationMs: Date.now() - startedAt,
     });
     return;
   }
 
-  if (req.method === 'GET' && req.url === '/api/metrics') {
+  if (req.method === "GET" && req.url === "/api/metrics") {
     try {
       assertInternalToken(req);
       sendJson(res, 200, collectMetricsSnapshot(), { requestId });
     } catch (error) {
       if (error instanceof ApiError) {
-        sendJson(res, error.status || 400, {
-          error: {
-            message: error.message,
-            code: error.code,
-            requestId
-          }
-        }, { requestId });
+        sendJson(
+          res,
+          error.status || 400,
+          {
+            error: {
+              message: error.message,
+              code: error.code,
+              requestId,
+            },
+          },
+          { requestId },
+        );
         return;
       }
 
-      sendJson(res, 400, {
-        error: {
-          message: error?.message || 'No se pudo obtener métricas.',
-          code: API_ERRORS.BAD_REQUEST,
-          requestId
-        }
-      }, { requestId });
+      sendJson(
+        res,
+        400,
+        {
+          error: {
+            message: error?.message || "No se pudo obtener métricas.",
+            code: API_ERRORS.BAD_REQUEST,
+            requestId,
+          },
+        },
+        { requestId },
+      );
     }
     return;
   }
 
-  if (req.method === 'GET' && req.url === '/metrics') {
+  if (req.method === "GET" && req.url === "/metrics") {
     try {
       assertInternalToken(req);
       const snapshot = collectMetricsSnapshot();
       res.writeHead(200, {
-        'Content-Type': 'text/plain; version=0.0.4; charset=utf-8',
-        'X-Request-Id': requestId
+        "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
+        "X-Request-Id": requestId,
       });
       res.end(asPrometheusMetrics(snapshot));
     } catch (error) {
       if (error instanceof ApiError) {
-        sendJson(res, error.status || 400, {
-          error: {
-            message: error.message,
-            code: error.code,
-            requestId
-          }
-        }, { requestId });
+        sendJson(
+          res,
+          error.status || 400,
+          {
+            error: {
+              message: error.message,
+              code: error.code,
+              requestId,
+            },
+          },
+          { requestId },
+        );
         return;
       }
 
-      sendJson(res, 400, {
-        error: {
-          message: error?.message || 'No se pudo obtener métricas.',
-          code: API_ERRORS.BAD_REQUEST,
-          requestId
-        }
-      }, { requestId });
+      sendJson(
+        res,
+        400,
+        {
+          error: {
+            message: error?.message || "No se pudo obtener métricas.",
+            code: API_ERRORS.BAD_REQUEST,
+            requestId,
+          },
+        },
+        { requestId },
+      );
     }
     return;
   }
 
-  if (req.method === 'POST' && req.url === '/api/calificacion/sugerir') {
+  if (req.method === "POST" && req.url === "/api/calificacion/sugerir") {
     try {
       const accessResult = await runProtectedAction({
         req,
         res,
         requestId,
-        action: 'correct_exam',
-        resource: '/api/calificacion/sugerir',
-        onAllowed: async () => true
+        action: "correct_exam",
+        resource: "/api/calificacion/sugerir",
+        onAllowed: async () => true,
       });
       if (!accessResult) {
         return;
       }
       assertInternalToken(req);
-      assertRateLimit({ req, requestId, method: req.method, path: requestPath });
+      assertRateLimit({
+        req,
+        requestId,
+        method: req.method,
+        path: requestPath,
+      });
       const payload = await parseBody(req);
       logEvent({
         requestId,
-        event: 'provider_selected',
+        event: "provider_selected",
         method: req.method,
         path: requestPath,
         provider: orchestrator.getStatus().primary?.name,
         model: orchestrator.getStatus().primary?.model,
-        payloadMetadata: safePayloadMetadata(payload)
+        payloadMetadata: safePayloadMetadata(payload),
       });
       const { datos, puntaje } = validarPayload(payload);
-      const sugerencia = await orchestrator.suggestGrade({ datos, puntaje }, {
-        requestId,
-        method: req.method,
-        path: requestPath
-      });
+      const sugerencia = await orchestrator.suggestGrade(
+        { datos, puntaje },
+        {
+          requestId,
+          method: req.method,
+          path: requestPath,
+        },
+      );
       sendJson(res, 200, sugerencia, { requestId });
       observeEndpointRequest({
         endpoint: METRICS_ENDPOINT_KEY,
         durationMs: Date.now() - startedAt,
-        statusCode: 200
+        statusCode: 200,
       });
       logEvent({
         requestId,
-        event: 'request_completed',
+        event: "request_completed",
         method: req.method,
         path: requestPath,
         status: 200,
         durationMs: Date.now() - startedAt,
         provider: sugerencia.proveedor,
-        model: sugerencia.modelo
+        model: sugerencia.modelo,
       });
     } catch (error) {
       if (error instanceof ApiError) {
         const statusCode = error.status || 400;
-        sendJson(res, error.status || 400, {
-          error: {
-            message: error.message,
-            code: error.code,
-            requestId
-          }
-        }, { requestId });
+        sendJson(
+          res,
+          error.status || 400,
+          {
+            error: {
+              message: error.message,
+              code: error.code,
+              requestId,
+            },
+          },
+          { requestId },
+        );
         observeEndpointRequest({
           endpoint: METRICS_ENDPOINT_KEY,
           durationMs: Date.now() - startedAt,
-          statusCode
+          statusCode,
         });
         logEvent({
           requestId,
-          event: 'request_completed',
+          event: "request_completed",
           method: req.method,
           path: requestPath,
           status: statusCode,
           durationMs: Date.now() - startedAt,
-          errorCode: error.code
+          errorCode: error.code,
         });
         return;
       }
 
       if (error instanceof ProviderIntegrationError) {
         const statusCode = error.status || 500;
-        sendJson(res, error.status || 500, {
-          error: {
-            message: error.message,
-            code: error.code,
-            provider: error.provider || orchestrator.getStatus().primary?.name,
-            requestId
-          }
-        }, { requestId });
+        sendJson(
+          res,
+          error.status || 500,
+          {
+            error: {
+              message: error.message,
+              code: error.code,
+              provider:
+                error.provider || orchestrator.getStatus().primary?.name,
+              requestId,
+            },
+          },
+          { requestId },
+        );
         observeEndpointRequest({
           endpoint: METRICS_ENDPOINT_KEY,
           durationMs: Date.now() - startedAt,
-          statusCode
+          statusCode,
         });
         logEvent({
           requestId,
-          event: 'request_completed',
+          event: "request_completed",
           method: req.method,
           path: requestPath,
           status: statusCode,
           durationMs: Date.now() - startedAt,
           provider: error.provider || orchestrator.getStatus().primary?.name,
-          errorCode: error.code
+          errorCode: error.code,
         });
         return;
       }
 
-      sendJson(res, 400, {
-        error: {
-          message: error?.message || 'No se pudo procesar la solicitud.',
-          code: API_ERRORS.BAD_REQUEST,
-          requestId
-        }
-      }, { requestId });
+      sendJson(
+        res,
+        400,
+        {
+          error: {
+            message: error?.message || "No se pudo procesar la solicitud.",
+            code: API_ERRORS.BAD_REQUEST,
+            requestId,
+          },
+        },
+        { requestId },
+      );
       observeEndpointRequest({
         endpoint: METRICS_ENDPOINT_KEY,
         durationMs: Date.now() - startedAt,
-        statusCode: 400
+        statusCode: 400,
       });
       logEvent({
         requestId,
-        event: 'request_completed',
+        event: "request_completed",
         method: req.method,
         path: requestPath,
         status: 400,
         durationMs: Date.now() - startedAt,
-        errorCode: API_ERRORS.BAD_REQUEST
+        errorCode: API_ERRORS.BAD_REQUEST,
       });
     }
 
     return;
   }
 
-  if (req.method === 'GET' && req.url === '/api/reportes') {
+  if (req.method === "GET" && req.url === "/api/reportes") {
     const accessResult = await runProtectedAction({
       req,
       res,
       requestId,
-      action: 'view_history',
-      resource: '/api/reportes',
-      onAllowed: async () => true
+      action: "view_history",
+      resource: "/api/reportes",
+      onAllowed: async () => true,
     });
     if (!accessResult) {
       return;
@@ -831,66 +1155,289 @@ const handler = async (req, res) => {
       const reportes = await listReports(getReportAccessScope(req.user));
       sendJson(res, 200, { data: reportes }, { requestId });
     } catch (error) {
-      sendJson(res, 500, {
-        error: {
-          message: error?.message || 'No se pudieron listar reportes.',
-          code: API_ERRORS.BAD_REQUEST,
-          requestId
-        }
-      }, { requestId });
+      sendJson(
+        res,
+        500,
+        {
+          error: {
+            message: error?.message || "No se pudieron listar reportes.",
+            code: API_ERRORS.BAD_REQUEST,
+            requestId,
+          },
+        },
+        { requestId },
+      );
     }
     return;
   }
 
-  const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  const parsedUrl = new URL(
+    req.url || "/",
+    `http://${req.headers.host || "localhost"}`,
+  );
 
-  if (req.method === 'GET' && parsedUrl.pathname === '/api/rubricas') {
+  if (req.method === "GET" && parsedUrl.pathname === "/api/rosters") {
     const accessResult = await runProtectedAction({
       req,
       res,
       requestId,
-      action: 'view_history',
-      resource: '/api/rubricas',
-      onAllowed: async () => true
+      action: "view_history",
+      resource: "/api/rosters",
+      onAllowed: async () => true,
     });
     if (!accessResult) {
       return;
     }
 
     try {
-      const versionParam = Number(parsedUrl.searchParams.get('version'));
-      const vigenteParam = parsedUrl.searchParams.get('vigente');
-      const includeHistory = String(parsedUrl.searchParams.get('historial') || '').toLowerCase() === 'true';
-      const rubricas = await listRubrics({
-        tenantId: req.user?.tenantId || req.user?.institution,
-        materia: parsedUrl.searchParams.get('materia') || undefined,
-        grado: parsedUrl.searchParams.get('grado') || undefined,
-        rubricId: parsedUrl.searchParams.get('rubricId') || undefined,
-        version: Number.isInteger(versionParam) && versionParam > 0 ? versionParam : undefined,
-        vigente: vigenteParam === null ? true : String(vigenteParam).toLowerCase() !== 'false',
-        includeHistory
+      const rosters = await listRosters({
+        group: parsedUrl.searchParams.get("group") || "",
+        term: parsedUrl.searchParams.get("term") || "",
       });
-      sendJson(res, 200, { data: rubricas }, { requestId });
+      sendJson(res, 200, { data: rosters }, { requestId });
     } catch (error) {
-      sendJson(res, 500, {
-        error: {
-          message: error?.message || 'No se pudieron listar rúbricas.',
-          code: API_ERRORS.BAD_REQUEST,
-          requestId
-        }
-      }, { requestId });
+      sendJson(
+        res,
+        500,
+        {
+          error: {
+            message: error?.message || "No se pudieron listar listas de grupo.",
+            code: API_ERRORS.BAD_REQUEST,
+            requestId,
+          },
+        },
+        { requestId },
+      );
     }
     return;
   }
 
-  if (req.method === 'POST' && parsedUrl.pathname === '/api/rubricas') {
+  if (req.method === "POST" && parsedUrl.pathname === "/api/rosters") {
     const accessResult = await runProtectedAction({
       req,
       res,
       requestId,
-      action: 'create_exam',
-      resource: '/api/rubricas',
-      onAllowed: async () => true
+      action: "create_exam",
+      resource: "/api/rosters",
+      onAllowed: async () => true,
+    });
+    if (!accessResult) {
+      return;
+    }
+
+    try {
+      const roster = await upsertRoster({ payload: await parseBody(req) });
+      sendJson(res, 201, { data: roster }, { requestId });
+    } catch (error) {
+      const statusCode = error instanceof ApiError ? error.status : 400;
+      sendJson(
+        res,
+        statusCode,
+        {
+          error: {
+            message: error?.message || "No se pudo crear la lista.",
+            code: API_ERRORS.PAYLOAD,
+            requestId,
+          },
+        },
+        { requestId },
+      );
+    }
+    return;
+  }
+
+  const rosterDetailMatch = parsedUrl.pathname.match(
+    /^\/api\/rosters\/([^/]+)$/,
+  );
+  if (req.method === "GET" && rosterDetailMatch) {
+    const accessResult = await runProtectedAction({
+      req,
+      res,
+      requestId,
+      action: "view_history",
+      resource: "/api/rosters/:id",
+      onAllowed: async () => true,
+    });
+    if (!accessResult) {
+      return;
+    }
+
+    const rosterId = decodeURIComponent(rosterDetailMatch[1]);
+    const roster = await getRosterById(rosterId);
+    if (!roster) {
+      sendJson(
+        res,
+        404,
+        {
+          error: {
+            message: "Lista no encontrada.",
+            code: API_ERRORS.NOT_FOUND,
+            requestId,
+          },
+        },
+        { requestId },
+      );
+      return;
+    }
+    sendJson(res, 200, { data: roster }, { requestId });
+    return;
+  }
+
+  if (req.method === "PUT" && rosterDetailMatch) {
+    const accessResult = await runProtectedAction({
+      req,
+      res,
+      requestId,
+      action: "create_exam",
+      resource: "/api/rosters/:id",
+      onAllowed: async () => true,
+    });
+    if (!accessResult) {
+      return;
+    }
+
+    try {
+      const rosterId = decodeURIComponent(rosterDetailMatch[1]);
+      const existing = await getRosterById(rosterId);
+      if (!existing) {
+        sendJson(
+          res,
+          404,
+          {
+            error: {
+              message: "Lista no encontrada.",
+              code: API_ERRORS.NOT_FOUND,
+              requestId,
+            },
+          },
+          { requestId },
+        );
+        return;
+      }
+      const roster = await upsertRoster({
+        rosterId,
+        payload: await parseBody(req),
+      });
+      sendJson(res, 200, { data: roster }, { requestId });
+    } catch (error) {
+      const statusCode = error instanceof ApiError ? error.status : 400;
+      sendJson(
+        res,
+        statusCode,
+        {
+          error: {
+            message: error?.message || "No se pudo actualizar la lista.",
+            code: API_ERRORS.PAYLOAD,
+            requestId,
+          },
+        },
+        { requestId },
+      );
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && rosterDetailMatch) {
+    const accessResult = await runProtectedAction({
+      req,
+      res,
+      requestId,
+      action: "delete_report",
+      resource: "/api/rosters/:id",
+      onAllowed: async () => true,
+    });
+    if (!accessResult) {
+      return;
+    }
+
+    const rosterId = decodeURIComponent(rosterDetailMatch[1]);
+    const client = await getDbPoolClient();
+    const existing = await getRosterById(rosterId);
+    if (!existing) {
+      sendJson(
+        res,
+        404,
+        {
+          error: {
+            message: "Lista no encontrada.",
+            code: API_ERRORS.NOT_FOUND,
+            requestId,
+          },
+        },
+        { requestId },
+      );
+      return;
+    }
+    await client.run(`DELETE FROM rosters WHERE id = ${sqlLiteral(rosterId)};`);
+    sendJson(
+      res,
+      200,
+      { data: { id: rosterId, deleted: true } },
+      { requestId },
+    );
+    return;
+  }
+
+  if (req.method === "GET" && parsedUrl.pathname === "/api/rubricas") {
+    const accessResult = await runProtectedAction({
+      req,
+      res,
+      requestId,
+      action: "view_history",
+      resource: "/api/rubricas",
+      onAllowed: async () => true,
+    });
+    if (!accessResult) {
+      return;
+    }
+
+    try {
+      const versionParam = Number(parsedUrl.searchParams.get("version"));
+      const vigenteParam = parsedUrl.searchParams.get("vigente");
+      const includeHistory =
+        String(parsedUrl.searchParams.get("historial") || "").toLowerCase() ===
+        "true";
+      const rubricas = await listRubrics({
+        tenantId: req.user?.tenantId || req.user?.institution,
+        materia: parsedUrl.searchParams.get("materia") || undefined,
+        grado: parsedUrl.searchParams.get("grado") || undefined,
+        rubricId: parsedUrl.searchParams.get("rubricId") || undefined,
+        version:
+          Number.isInteger(versionParam) && versionParam > 0
+            ? versionParam
+            : undefined,
+        vigente:
+          vigenteParam === null
+            ? true
+            : String(vigenteParam).toLowerCase() !== "false",
+        includeHistory,
+      });
+      sendJson(res, 200, { data: rubricas }, { requestId });
+    } catch (error) {
+      sendJson(
+        res,
+        500,
+        {
+          error: {
+            message: error?.message || "No se pudieron listar rúbricas.",
+            code: API_ERRORS.BAD_REQUEST,
+            requestId,
+          },
+        },
+        { requestId },
+      );
+    }
+    return;
+  }
+
+  if (req.method === "POST" && parsedUrl.pathname === "/api/rubricas") {
+    const accessResult = await runProtectedAction({
+      req,
+      res,
+      requestId,
+      action: "create_exam",
+      resource: "/api/rubricas",
+      onAllowed: async () => true,
     });
     if (!accessResult) {
       return;
@@ -900,80 +1447,107 @@ const handler = async (req, res) => {
       const payload = await parseBody(req);
       const rubrica = await createRubric(payload, {
         tenantId: req.user?.tenantId || req.user?.institution,
-        actor: req.user?.userId || req.user?.sub || 'api_user'
+        actor: req.user?.userId || req.user?.sub || "api_user",
       });
       sendJson(res, 201, { data: rubrica }, { requestId });
     } catch (error) {
-      sendJson(res, 400, {
-        error: {
-          message: error?.message || 'No se pudo crear la rúbrica.',
-          code: API_ERRORS.PAYLOAD,
-          requestId
-        }
-      }, { requestId });
+      sendJson(
+        res,
+        400,
+        {
+          error: {
+            message: error?.message || "No se pudo crear la rúbrica.",
+            code: API_ERRORS.PAYLOAD,
+            requestId,
+          },
+        },
+        { requestId },
+      );
     }
     return;
   }
 
-  if (req.method === 'GET' && req.url?.startsWith('/api/reportes/') && req.url?.endsWith('/export')) {
+  if (
+    req.method === "GET" &&
+    req.url?.startsWith("/api/reportes/") &&
+    req.url?.endsWith("/export")
+  ) {
     const accessResult = await runProtectedAction({
       req,
       res,
       requestId,
-      action: 'export_report',
-      resource: '/api/reportes/:id/export',
-      onAllowed: async () => true
+      action: "export_report",
+      resource: "/api/reportes/:id/export",
+      onAllowed: async () => true,
     });
     if (!accessResult) {
       return;
     }
 
-    const reportId = decodeURIComponent(req.url.replace('/api/reportes/', '').replace('/export', '').trim());
+    const reportId = decodeURIComponent(
+      req.url.replace("/api/reportes/", "").replace("/export", "").trim(),
+    );
     const accessScope = getReportAccessScope(req.user);
     const reporte = await getReportById(reportId, accessScope);
     if (!reporte) {
       const existing = await getReportByIdUnscoped(reportId);
       if (existing) {
-        sendForbiddenReportAccess({ req, res, requestId, resource: '/api/reportes/:id/export' });
+        sendForbiddenReportAccess({
+          req,
+          res,
+          requestId,
+          resource: "/api/reportes/:id/export",
+        });
         return;
       }
-      sendJson(res, 404, {
-        error: {
-          message: 'Reporte no encontrado.',
-          code: API_ERRORS.NOT_FOUND,
-          requestId
-        }
-      }, { requestId });
+      sendJson(
+        res,
+        404,
+        {
+          error: {
+            message: "Reporte no encontrado.",
+            code: API_ERRORS.NOT_FOUND,
+            requestId,
+          },
+        },
+        { requestId },
+      );
       return;
     }
 
-    sendJson(res, 200, {
-      data: reporte,
-      export: { format: 'json', generatedAt: new Date().toISOString() }
-    }, { requestId });
+    sendJson(
+      res,
+      200,
+      {
+        data: reporte,
+        export: { format: "json", generatedAt: new Date().toISOString() },
+      },
+      { requestId },
+    );
     logReportAuditEvent({
       requestId,
       req,
-      event: 'report_exported',
+      event: "report_exported",
       reportId,
       status: 200,
-      action: 'export_report',
-      resource: '/api/reportes/:id/export'
+      action: "export_report",
+      resource: "/api/reportes/:id/export",
     });
     return;
   }
 
-  const reportVersionsListMatch = req.method === 'GET'
-    ? req.url?.match(/^\/api\/reportes\/([^/]+)\/versiones$/)
-    : null;
+  const reportVersionsListMatch =
+    req.method === "GET"
+      ? req.url?.match(/^\/api\/reportes\/([^/]+)\/versiones$/)
+      : null;
   if (reportVersionsListMatch) {
     const accessResult = await runProtectedAction({
       req,
       res,
       requestId,
-      action: 'view_history',
-      resource: '/api/reportes/:id/versiones',
-      onAllowed: async () => true
+      action: "view_history",
+      resource: "/api/reportes/:id/versiones",
+      onAllowed: async () => true,
     });
     if (!accessResult) {
       return;
@@ -985,16 +1559,26 @@ const handler = async (req, res) => {
     if (!scopedReport) {
       const existing = await getReportByIdUnscoped(reportId);
       if (existing) {
-        sendForbiddenReportAccess({ req, res, requestId, resource: '/api/reportes/:id/versiones' });
+        sendForbiddenReportAccess({
+          req,
+          res,
+          requestId,
+          resource: "/api/reportes/:id/versiones",
+        });
         return;
       }
-      sendJson(res, 404, {
-        error: {
-          message: 'Reporte no encontrado.',
-          code: API_ERRORS.NOT_FOUND,
-          requestId
-        }
-      }, { requestId });
+      sendJson(
+        res,
+        404,
+        {
+          error: {
+            message: "Reporte no encontrado.",
+            code: API_ERRORS.NOT_FOUND,
+            requestId,
+          },
+        },
+        { requestId },
+      );
       return;
     }
 
@@ -1003,17 +1587,18 @@ const handler = async (req, res) => {
     return;
   }
 
-  const reportVersionDetailMatch = req.method === 'GET'
-    ? req.url?.match(/^\/api\/reportes\/([^/]+)\/versiones\/(\d+)$/)
-    : null;
+  const reportVersionDetailMatch =
+    req.method === "GET"
+      ? req.url?.match(/^\/api\/reportes\/([^/]+)\/versiones\/(\d+)$/)
+      : null;
   if (reportVersionDetailMatch) {
     const accessResult = await runProtectedAction({
       req,
       res,
       requestId,
-      action: 'view_history',
-      resource: '/api/reportes/:id/versiones/:version',
-      onAllowed: async () => true
+      action: "view_history",
+      resource: "/api/reportes/:id/versiones/:version",
+      onAllowed: async () => true,
     });
     if (!accessResult) {
       return;
@@ -1026,28 +1611,43 @@ const handler = async (req, res) => {
     if (!scopedReport) {
       const existing = await getReportByIdUnscoped(reportId);
       if (existing) {
-        sendForbiddenReportAccess({ req, res, requestId, resource: '/api/reportes/:id/versiones/:version' });
+        sendForbiddenReportAccess({
+          req,
+          res,
+          requestId,
+          resource: "/api/reportes/:id/versiones/:version",
+        });
         return;
       }
-      sendJson(res, 404, {
-        error: {
-          message: 'Reporte no encontrado.',
-          code: API_ERRORS.NOT_FOUND,
-          requestId
-        }
-      }, { requestId });
+      sendJson(
+        res,
+        404,
+        {
+          error: {
+            message: "Reporte no encontrado.",
+            code: API_ERRORS.NOT_FOUND,
+            requestId,
+          },
+        },
+        { requestId },
+      );
       return;
     }
 
     const version = await getReportVersion(reportId, requestedVersion);
     if (!version) {
-      sendJson(res, 404, {
-        error: {
-          message: 'Versión no encontrada.',
-          code: API_ERRORS.NOT_FOUND,
-          requestId
-        }
-      }, { requestId });
+      sendJson(
+        res,
+        404,
+        {
+          error: {
+            message: "Versión no encontrada.",
+            code: API_ERRORS.NOT_FOUND,
+            requestId,
+          },
+        },
+        { requestId },
+      );
       return;
     }
 
@@ -1055,112 +1655,146 @@ const handler = async (req, res) => {
     return;
   }
 
-  if (req.method === 'DELETE' && req.url?.startsWith('/api/reportes/')) {
+  if (req.method === "DELETE" && req.url?.startsWith("/api/reportes/")) {
     const accessResult = await runProtectedAction({
       req,
       res,
       requestId,
-      action: 'delete_report',
-      resource: '/api/reportes/:id',
-      onAllowed: async () => true
+      action: "delete_report",
+      resource: "/api/reportes/:id",
+      onAllowed: async () => true,
     });
     if (!accessResult) {
       return;
     }
 
-    const reportId = decodeURIComponent(req.url.replace('/api/reportes/', '').trim());
+    const reportId = decodeURIComponent(
+      req.url.replace("/api/reportes/", "").trim(),
+    );
     const accessScope = getReportAccessScope(req.user);
     const existingScoped = await getReportById(reportId, accessScope);
     if (!existingScoped) {
       const existing = await getReportByIdUnscoped(reportId);
       if (existing) {
-        sendForbiddenReportAccess({ req, res, requestId, resource: '/api/reportes/:id' });
+        sendForbiddenReportAccess({
+          req,
+          res,
+          requestId,
+          resource: "/api/reportes/:id",
+        });
         return;
       }
-      sendJson(res, 404, {
-        error: {
-          message: 'Reporte no encontrado.',
-          code: API_ERRORS.NOT_FOUND,
-          requestId
-        }
-      }, { requestId });
+      sendJson(
+        res,
+        404,
+        {
+          error: {
+            message: "Reporte no encontrado.",
+            code: API_ERRORS.NOT_FOUND,
+            requestId,
+          },
+        },
+        { requestId },
+      );
       return;
     }
 
-    const untrustedActorHint = String(req.headers['x-actor'] || '').trim();
+    const untrustedActorHint = String(req.headers["x-actor"] || "").trim();
     const deleted = await deleteReport(reportId, {
-      actor: req.user?.userId || 'system',
+      actor: req.user?.userId || "system",
       auditMetadata: {
         tenantId: req.user?.tenantId || req.user?.institution,
         userId: req.user?.userId,
         role: req.user?.role,
         sessionId: req.user?.sessionId,
-        resource: '/api/reportes/:id',
+        resource: "/api/reportes/:id",
         timestamp: new Date().toISOString(),
-        ...(untrustedActorHint ? { untrustedActorHint } : {})
-      }
+        ...(untrustedActorHint ? { untrustedActorHint } : {}),
+      },
     });
 
     if (!deleted) {
-      sendJson(res, 404, {
-        error: {
-          message: 'Reporte no encontrado.',
-          code: API_ERRORS.NOT_FOUND,
-          requestId
-        }
-      }, { requestId });
+      sendJson(
+        res,
+        404,
+        {
+          error: {
+            message: "Reporte no encontrado.",
+            code: API_ERRORS.NOT_FOUND,
+            requestId,
+          },
+        },
+        { requestId },
+      );
       return;
     }
 
     logReportAuditEvent({
       requestId,
       req,
-      event: 'report_deleted',
+      event: "report_deleted",
       reportId,
       status: 200,
-      action: 'delete_report',
-      resource: '/api/reportes/:id'
+      action: "delete_report",
+      resource: "/api/reportes/:id",
     });
-    sendJson(res, 200, {
-      data: {
-        id: reportId,
-        deleted: true,
-        deletedAt: new Date().toISOString()
-      }
-    }, { requestId });
+    sendJson(
+      res,
+      200,
+      {
+        data: {
+          id: reportId,
+          deleted: true,
+          deletedAt: new Date().toISOString(),
+        },
+      },
+      { requestId },
+    );
     return;
   }
 
-  if (req.method === 'GET' && req.url?.startsWith('/api/reportes/')) {
+  if (req.method === "GET" && req.url?.startsWith("/api/reportes/")) {
     const accessResult = await runProtectedAction({
       req,
       res,
       requestId,
-      action: 'view_history',
-      resource: '/api/reportes/:id',
-      onAllowed: async () => true
+      action: "view_history",
+      resource: "/api/reportes/:id",
+      onAllowed: async () => true,
     });
     if (!accessResult) {
       return;
     }
 
-    const reportId = decodeURIComponent(req.url.replace('/api/reportes/', '').trim());
+    const reportId = decodeURIComponent(
+      req.url.replace("/api/reportes/", "").trim(),
+    );
     const accessScope = getReportAccessScope(req.user);
     const reporte = await getReportById(reportId, accessScope);
 
     if (!reporte) {
       const existing = await getReportByIdUnscoped(reportId);
       if (existing) {
-        sendForbiddenReportAccess({ req, res, requestId, resource: '/api/reportes/:id' });
+        sendForbiddenReportAccess({
+          req,
+          res,
+          requestId,
+          resource: "/api/reportes/:id",
+        });
         return;
       }
-      sendJson(res, 404, {
-        error: {
-          message: 'Reporte no encontrado.',
-          code: API_ERRORS.NOT_FOUND,
-          requestId
-        }
-      }, { requestId });
+      sendJson(
+        res,
+        404,
+        {
+          error: {
+            message: "Reporte no encontrado.",
+            code: API_ERRORS.NOT_FOUND,
+            requestId,
+          },
+        },
+        { requestId },
+      );
       return;
     }
 
@@ -1168,14 +1802,14 @@ const handler = async (req, res) => {
     return;
   }
 
-  if (req.method === 'POST' && req.url === '/api/reportes') {
+  if (req.method === "POST" && req.url === "/api/reportes") {
     const accessResult = await runProtectedAction({
       req,
       res,
       requestId,
-      action: 'create_exam',
-      resource: '/api/reportes',
-      onAllowed: async () => true
+      action: "create_exam",
+      resource: "/api/reportes",
+      onAllowed: async () => true,
     });
     if (!accessResult) {
       return;
@@ -1183,16 +1817,23 @@ const handler = async (req, res) => {
 
     try {
       const payload = validarPayloadReporte(await parseBody(req));
-      const untrustedActorHint = String(req.headers['x-actor'] || '').trim();
-      const actor = req.user?.userId || 'system';
-      const payloadId = typeof payload.id === 'string' ? payload.id : '';
+      const untrustedActorHint = String(req.headers["x-actor"] || "").trim();
+      const actor = req.user?.userId || "system";
+      const payloadId = typeof payload.id === "string" ? payload.id : "";
       const accessScope = getReportAccessScope(req.user);
-      const existe = payloadId ? await getReportById(payloadId, accessScope) : null;
+      const existe = payloadId
+        ? await getReportById(payloadId, accessScope)
+        : null;
 
       if (payloadId && !existe) {
         const existing = await getReportByIdUnscoped(payloadId);
         if (existing) {
-          sendForbiddenReportAccess({ req, res, requestId, resource: '/api/reportes' });
+          sendForbiddenReportAccess({
+            req,
+            res,
+            requestId,
+            resource: "/api/reportes",
+          });
           return;
         }
       }
@@ -1200,60 +1841,77 @@ const handler = async (req, res) => {
       const ownership = {
         tenantId: req.user?.tenantId,
         userId: req.user?.userId,
-        role: req.user?.role
+        role: req.user?.role,
       };
       const auditMetadata = {
         tenantId: req.user?.tenantId || req.user?.institution,
         sessionId: req.user?.sessionId,
-        ...(untrustedActorHint ? { untrustedActorHint } : {})
+        ...(untrustedActorHint ? { untrustedActorHint } : {}),
       };
       const reporte = existe
-        ? await updateReport(payloadId, payload, { actor, ownership, auditMetadata })
+        ? await updateReport(payloadId, payload, {
+            actor,
+            ownership,
+            auditMetadata,
+          })
         : await createReport(payload, { actor, ownership, auditMetadata });
 
       sendJson(res, existe ? 200 : 201, reporte, { requestId });
     } catch (error) {
       const status = error instanceof ApiError ? error.status : 400;
-      const code = error instanceof ApiError ? error.code : API_ERRORS.BAD_REQUEST;
-      sendJson(res, status, {
-        error: {
-          message: error?.message || 'No se pudo guardar el reporte.',
-          code,
-          requestId
-        }
-      }, { requestId });
+      const code =
+        error instanceof ApiError ? error.code : API_ERRORS.BAD_REQUEST;
+      sendJson(
+        res,
+        status,
+        {
+          error: {
+            message: error?.message || "No se pudo guardar el reporte.",
+            code,
+            requestId,
+          },
+        },
+        { requestId },
+      );
     }
     return;
   }
 
-  sendJson(res, 404, {
-    error: {
-      message: 'Ruta no encontrada.',
-      code: API_ERRORS.NOT_FOUND,
-      requestId
-    }
-  }, { requestId });
+  sendJson(
+    res,
+    404,
+    {
+      error: {
+        message: "Ruta no encontrada.",
+        code: API_ERRORS.NOT_FOUND,
+        requestId,
+      },
+    },
+    { requestId },
+  );
   logEvent({
     requestId,
-    event: 'request_completed',
+    event: "request_completed",
     method: req.method,
     path: requestPath,
     status: 404,
     durationMs: Date.now() - startedAt,
-    errorCode: API_ERRORS.NOT_FOUND
+    errorCode: API_ERRORS.NOT_FOUND,
   });
 };
 
 const server = http.createServer((req, res) => {
   handler(req, res);
 });
-server.on('close', stopRateLimitJanitor);
+server.on("close", stopRateLimitJanitor);
 startRateLimitJanitor();
 
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== "test") {
   server.listen(PORT, () => {
     const status = orchestrator.getStatus();
-    console.log(`Backend de CalificaYa escuchando en http://localhost:${PORT} usando proveedor ${status.primary?.name}`);
+    console.log(
+      `Backend de CalificaYa escuchando en http://localhost:${PORT} usando proveedor ${status.primary?.name}`,
+    );
   });
 }
 
@@ -1262,5 +1920,5 @@ export {
   handler,
   getRateLimitIdentifier,
   cleanupExpiredBuckets,
-  enforceBucketCapacity
+  enforceBucketCapacity,
 };

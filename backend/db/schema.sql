@@ -114,6 +114,29 @@ CREATE INDEX IF NOT EXISTS idx_schools_tenant_id ON schools(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_groups_school_name ON groups(school_id, name);
 CREATE INDEX IF NOT EXISTS idx_exams_group_date ON exams(group_id, exam_date DESC);
 CREATE INDEX IF NOT EXISTS idx_students_group_enrollment ON students(group_id, enrollment);
+
+CREATE TABLE IF NOT EXISTS rosters (
+  id TEXT PRIMARY KEY,
+  group_name TEXT NOT NULL,
+  term TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (group_name, term)
+);
+
+CREATE TABLE IF NOT EXISTS roster_students (
+  id TEXT PRIMARY KEY,
+  roster_id TEXT NOT NULL,
+  student_name TEXT NOT NULL,
+  student_enrollment TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (roster_id) REFERENCES rosters(id) ON DELETE CASCADE,
+  UNIQUE (roster_id, student_enrollment)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rosters_group_term ON rosters(group_name, term);
+CREATE INDEX IF NOT EXISTS idx_roster_students_roster_enrollment ON roster_students(roster_id, student_enrollment);
 CREATE INDEX IF NOT EXISTS idx_submissions_exam_student ON submissions(exam_id, student_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_report_id ON submissions(report_id);
 CREATE INDEX IF NOT EXISTS idx_reports_created_at ON reports(created_at DESC);

@@ -1,14 +1,14 @@
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import { getDbPoolClient } from './pool.js';
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { getDbPoolClient } from "./pool.js";
 
-const SCHEMA_FILE = path.resolve(process.cwd(), 'backend/db/schema.sql');
+const SCHEMA_FILE = path.resolve(process.cwd(), "backend/db/schema.sql");
 let migrated = false;
 
 const MIGRATIONS = [
   {
     version: 1,
-    name: 'initial_reports_and_audit',
+    name: "initial_reports_and_audit",
     sql: `
       CREATE TABLE IF NOT EXISTS reports (
         id TEXT PRIMARY KEY,
@@ -29,11 +29,11 @@ const MIGRATIONS = [
 
       CREATE INDEX IF NOT EXISTS idx_reports_created_at ON reports(created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_audit_logs_report_created_at ON audit_logs(report_id, created_at DESC);
-    `
+    `,
   },
   {
     version: 2,
-    name: 'normalized_reporting_model',
+    name: "normalized_reporting_model",
     sql: `
       CREATE TABLE IF NOT EXISTS schools (
         id TEXT PRIMARY KEY,
@@ -113,11 +113,11 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_students_group_enrollment ON students(group_id, enrollment);
       CREATE INDEX IF NOT EXISTS idx_submissions_exam_student ON submissions(exam_id, student_id);
       CREATE INDEX IF NOT EXISTS idx_submissions_report_id ON submissions(report_id);
-    `
+    `,
   },
   {
     version: 3,
-    name: 'backfill_normalized_from_reports',
+    name: "backfill_normalized_from_reports",
     sql: `
       INSERT OR IGNORE INTO schools (id, tenant_id, name, created_at, updated_at)
       SELECT
@@ -139,11 +139,11 @@ const MIGRATIONS = [
         r.created_at,
         r.updated_at
       FROM reports r;
-    `
+    `,
   },
   {
     version: 4,
-    name: 'report_versions_history',
+    name: "report_versions_history",
     sql: `
       CREATE TABLE IF NOT EXISTS report_versions (
         id TEXT PRIMARY KEY,
@@ -176,11 +176,11 @@ const MIGRATIONS = [
       WHERE NOT EXISTS (
         SELECT 1 FROM report_versions rv WHERE rv.report_id = r.id
       );
-    `
+    `,
   },
   {
     version: 5,
-    name: 'rubrics_versioned_persistence',
+    name: "rubrics_versioned_persistence",
     sql: `
       CREATE TABLE IF NOT EXISTS rubrics (
         id TEXT PRIMARY KEY,
@@ -210,8 +210,37 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_rubrics_lookup ON rubrics(tenant_id, materia, grado);
       CREATE INDEX IF NOT EXISTS idx_rubric_versions_rubric_version
       ON rubric_versions(rubric_id, version_number DESC);
-    `
-  }
+    `,
+  },
+  {
+    version: 6,
+    name: "rosters_for_classroom_membership",
+    sql: `
+      CREATE TABLE IF NOT EXISTS rosters (
+        id TEXT PRIMARY KEY,
+        group_name TEXT NOT NULL,
+        term TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (group_name, term)
+      );
+
+      CREATE TABLE IF NOT EXISTS roster_students (
+        id TEXT PRIMARY KEY,
+        roster_id TEXT NOT NULL,
+        student_name TEXT NOT NULL,
+        student_enrollment TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (roster_id) REFERENCES rosters(id) ON DELETE CASCADE,
+        UNIQUE (roster_id, student_enrollment)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_rosters_group_term ON rosters(group_name, term);
+      CREATE INDEX IF NOT EXISTS idx_roster_students_roster_enrollment
+      ON roster_students(roster_id, student_enrollment);
+    `,
+  },
 ];
 
 const ensureMigrationTable = async (client) => {
@@ -225,8 +254,14 @@ const ensureMigrationTable = async (client) => {
 };
 
 const listAppliedVersions = async (client) => {
-  const rows = await client.all('SELECT version FROM schema_migrations ORDER BY version ASC;');
-  return new Set(rows.map((row) => Number(row.version)).filter((value) => Number.isInteger(value)));
+  const rows = await client.all(
+    "SELECT version FROM schema_migrations ORDER BY version ASC;",
+  );
+  return new Set(
+    rows
+      .map((row) => Number(row.version))
+      .filter((value) => Number.isInteger(value)),
+  );
 };
 
 const applyMigration = async (client, migration) => {
@@ -241,7 +276,10 @@ const applyMigration = async (client, migration) => {
 
 export const applyMigrations = async () => {
   if (migrated) {
-    return { applied: [], latestVersion: MIGRATIONS[MIGRATIONS.length - 1].version };
+    return {
+      applied: [],
+      latestVersion: MIGRATIONS[MIGRATIONS.length - 1].version,
+    };
   }
 
   const client = await getDbPoolClient();
@@ -258,13 +296,13 @@ export const applyMigrations = async () => {
     newlyApplied.push({ version: migration.version, name: migration.name });
   }
 
-  const schemaSql = await readFile(SCHEMA_FILE, 'utf-8');
+  const schemaSql = await readFile(SCHEMA_FILE, "utf-8");
   await client.exec(schemaSql);
   migrated = true;
 
   return {
     applied: newlyApplied,
-    latestVersion: MIGRATIONS[MIGRATIONS.length - 1].version
+    latestVersion: MIGRATIONS[MIGRATIONS.length - 1].version,
   };
 };
 
