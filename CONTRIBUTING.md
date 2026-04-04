@@ -91,6 +91,8 @@ Marca estos ítems antes de solicitar revisión:
 
 ### Ejecución local recomendada
 
+> **Baseline de Node.js:** usa **Node.js 20+** en entorno local para mantener paridad con CI y evitar discrepancias entre resultados locales y pipeline.
+
 ```bash
 npm install
 npm run lint
