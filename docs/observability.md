@@ -246,6 +246,7 @@ Referencias concretas para el checklist final del roadmap:
   - Job `restore-drill` con artefacto `restore-drill-evidence` en `.github/workflows/ci.yml`.
   - Evidencia esperada: publicada como artefacto de CI (descargable desde el run), no como archivo versionado en git por defecto.
 - **Estado del dashboard externo:**
+  - Última verificación (ISO-8601): `2026-04-04`.
   - `owner`: `Platform & SRE`.
   - `target_date`: `2026-04-15` (usar formato ISO-8601 `YYYY-MM-DD`).
   - `status`: `activo`.

@@ -175,6 +175,7 @@ Todo cambio de decisión técnica (por ejemplo, migración de persistencia o mod
 - [x] Los criterios de aceptación y métricas de la épica coinciden con los documentos técnicos actualizados. _(Evidencia: SLO/SLI y consultas de panel en `docs/observability.md`; controles `401/403`, auditoría y segmentación de rate limit por rol en `docs/security.md`; quality gate por módulos críticos y E2E crítico en `docs/architecture.md`.)_
 - [x] Se reflejaron dependencias, supuestos y riesgos nuevos en la documentación correspondiente. _(Evidencia: riesgos y mitigaciones operativas en `docs/security.md`; dependencias de proveedor IA + fallback/circuit breaker y transaccionalidad en `docs/architecture.md`; restore drill programado y supuestos de backup en `docs/runbooks/backup-restore.md`.)_
 - [x] La evidencia de dashboard operativo externo de la épica está registrada con datos verificables.
+  - Última verificación (ISO-8601): `2026-04-04`.
   - `owner`: `Platform & SRE`.
   - `target_date`: `2026-04-15`.
   - `status`: `activo`.
