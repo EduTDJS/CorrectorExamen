@@ -152,4 +152,5 @@ describe('App - flujo guardar y exportar', () => {
     fireEvent.change(overrideInput, { target: { value: '7' } });
     expect(await screen.findByText('7.00')).toBeInTheDocument();
   });
+
 });

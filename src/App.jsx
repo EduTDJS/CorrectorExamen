@@ -93,6 +93,8 @@ function App() {
   });
   const [errorSesionUi, setErrorSesionUi] = useState("");
   const [overridesDocente, setOverridesDocente] = useState({});
+  const [checklistRevisionBajaConfianza, setChecklistRevisionBajaConfianza] =
+    useState({});
   const [importacionEstado, setImportacionEstado] = useState({
     filas: [],
     errores: [],
@@ -284,6 +286,54 @@ function App() {
       puntaje: desglosePreguntas.reduce((acc, item) => acc + item.puntaje, 0),
     };
   }, [desglosePreguntas]);
+
+  const preguntasBajaConfianza = useMemo(
+    () =>
+      desglosePreguntas.filter(
+        (item) => item.bajaConfianza && typeof item.confianzaOCR === "number",
+      ),
+    [desglosePreguntas],
+  );
+
+  const estaBajaConfianzaRevisada = (numeroPregunta) => {
+    if (checklistRevisionBajaConfianza[numeroPregunta]) {
+      return true;
+    }
+    const override = overridesDocente[numeroPregunta];
+    return override !== undefined && String(override).trim() !== "";
+  };
+
+  const resumenBajaConfianzaRevision = useMemo(() => {
+    const total = preguntasBajaConfianza.length;
+    const revisadas = preguntasBajaConfianza.filter((item) =>
+      estaBajaConfianzaRevisada(item.numero),
+    ).length;
+    return {
+      total,
+      revisadas,
+      pendientes: Math.max(total - revisadas, 0),
+    };
+  }, [checklistRevisionBajaConfianza, overridesDocente, preguntasBajaConfianza]);
+
+  useEffect(() => {
+    if (preguntasBajaConfianza.length === 0) {
+      setChecklistRevisionBajaConfianza({});
+      return;
+    }
+
+    const numerosActuales = new Set(
+      preguntasBajaConfianza.map((item) => item.numero),
+    );
+    setChecklistRevisionBajaConfianza((previo) => {
+      const siguiente = {};
+      Object.entries(previo).forEach(([numero, valor]) => {
+        if (numerosActuales.has(Number(numero))) {
+          siguiente[numero] = valor;
+        }
+      });
+      return siguiente;
+    });
+  }, [preguntasBajaConfianza]);
 
   const notaFinalNumerica = Number(
     decisionFinal.puntuacion || resultadoRevision.puntaje || 0,
@@ -683,6 +733,14 @@ function App() {
     }));
   };
 
+  const confirmarRevisionBajaConfianza = (numeroPregunta) => {
+    setChecklistRevisionBajaConfianza((previo) => ({
+      ...previo,
+      [numeroPregunta]: true,
+    }));
+    setErrores((previo) => ({ ...previo, revisionBajaConfianza: "" }));
+  };
+
   const validarPaso = (indice) => {
     const nuevosErrores = {};
 
@@ -719,10 +777,19 @@ function App() {
     }
 
     if (indice === 3) {
+      if (resumenBajaConfianzaRevision.pendientes > 0) {
+        nuevosErrores.revisionBajaConfianza =
+          "Debe confirmar o editar cada pregunta de baja confianza antes de guardar/exportar.";
+      }
       if (!decisionFinal.puntuacion || !decisionFinal.justificacion.trim()) {
         nuevosErrores.decisionFinal =
           "Debe registrar puntuación y justificación final de la profesora.";
       }
+    }
+
+    if (indice === 2 && resumenBajaConfianzaRevision.pendientes > 0) {
+      nuevosErrores.revisionBajaConfianza =
+        "Debe confirmar o editar cada pregunta de baja confianza antes de continuar.";
     }
 
     setErrores(nuevosErrores);
@@ -995,6 +1062,11 @@ function App() {
             desglosePreguntas={desglosePreguntas}
             overridesDocente={overridesDocente}
             onOverrideDocente={actualizarOverrideDocente}
+            checklistBajaConfianza={checklistRevisionBajaConfianza}
+            onConfirmarRevisionBajaConfianza={confirmarRevisionBajaConfianza}
+            onEditarRespuestaBajaConfianza={() => retrocederPaso(() => setErrores({}))}
+            resumenBajaConfianzaRevision={resumenBajaConfianzaRevision}
+            errorRevisionBajaConfianza={errores.revisionBajaConfianza}
           />
         )}
 
@@ -1009,6 +1081,8 @@ function App() {
             guardarReporte={guardarReporte}
             exportarReporteActual={exportarReporteActual}
             reporteActualGuardado={reporteActualGuardado}
+            bloqueoRevisionBajaConfianza={resumenBajaConfianzaRevision.pendientes > 0}
+            resumenBajaConfianzaRevision={resumenBajaConfianzaRevision}
             filtrosHistorial={filtrosHistorial}
             setFiltrosHistorial={setFiltrosHistorial}
             reportesFiltrados={reportesFiltrados}

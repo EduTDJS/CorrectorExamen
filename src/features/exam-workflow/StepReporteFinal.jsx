@@ -8,6 +8,8 @@ function StepReporteFinal({
   guardarReporte,
   exportarReporteActual,
   reporteActualGuardado,
+  bloqueoRevisionBajaConfianza,
+  resumenBajaConfianzaRevision,
   filtrosHistorial,
   setFiltrosHistorial,
   reportesFiltrados,
@@ -46,10 +48,15 @@ function StepReporteFinal({
       </div>
 
       <div className="acciones-ajustes">
-        <button type="button" onClick={guardarReporte}>Guardar reporte</button>
-        <button type="button" onClick={() => exportarReporteActual('pdf')}>Exportar PDF</button>
-        <button type="button" onClick={() => exportarReporteActual('csv')}>Exportar CSV</button>
+        <button type="button" onClick={guardarReporte} disabled={bloqueoRevisionBajaConfianza}>Guardar reporte</button>
+        <button type="button" onClick={() => exportarReporteActual('pdf')} disabled={bloqueoRevisionBajaConfianza}>Exportar PDF</button>
+        <button type="button" onClick={() => exportarReporteActual('csv')} disabled={bloqueoRevisionBajaConfianza}>Exportar CSV</button>
       </div>
+      {bloqueoRevisionBajaConfianza && (
+        <p className="error">
+          Aún hay {resumenBajaConfianzaRevision.pendientes} preguntas de baja confianza pendientes de revisión.
+        </p>
+      )}
 
       {errorSesion && <p className="error">{errorSesion}</p>}
 
