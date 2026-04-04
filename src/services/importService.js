@@ -1,11 +1,34 @@
 import { convertirTextoALista, limpiarRespuestas } from '../utils/examUtils';
 import { strFromU8, unzipSync } from 'fflate';
 
-export const IMPORT_LIMITS = {
+const DEFAULT_MAX_ROWS = 200;
+const DEFAULT_IMPORT_LIMITS = {
   maxRows: 200,
   maxFileSizeBytes: 2 * 1024 * 1024,
   supportedExtensions: ['csv', 'xls', 'xlsx']
 };
+
+const parseConfigInteger = (value, fallback) => {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return parsed;
+};
+
+const resolveConfiguredMaxRows = () => {
+  const appConfig = globalThis?.__APP_CONFIG__ || {};
+  const configMaxRows = appConfig?.import?.maxRows ?? appConfig?.IMPORT_MAX_ROWS;
+  const envMaxRows = import.meta.env?.VITE_IMPORT_MAX_ROWS;
+  return parseConfigInteger(configMaxRows ?? envMaxRows, DEFAULT_MAX_ROWS);
+};
+
+export const obtenerImportLimits = () => ({
+  ...DEFAULT_IMPORT_LIMITS,
+  maxRows: resolveConfiguredMaxRows()
+});
+
+export const IMPORT_LIMITS = Object.freeze(obtenerImportLimits());
 
 const REQUIRED_FIELDS = ['estudianteNombre', 'estudianteMatricula', 'respuestas'];
 
@@ -309,8 +332,9 @@ const parseByExtension = async (file, extension) => {
 };
 
 const construirResultadoImportacion = ({ rawRows, totalPreguntas, filaInicial = 2 }) => {
-  if (rawRows.length > IMPORT_LIMITS.maxRows) {
-    throw new Error(`La importación supera el límite de ${IMPORT_LIMITS.maxRows} registros.`);
+  const { maxRows } = obtenerImportLimits();
+  if (rawRows.length > maxRows) {
+    throw new Error(`La importación supera el límite de ${maxRows} registros.`);
   }
 
   const headersMap = mapearHeaders(Object.keys(rawRows[0] || {}));

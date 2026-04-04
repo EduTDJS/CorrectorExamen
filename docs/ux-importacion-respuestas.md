@@ -50,7 +50,11 @@ Luis Díaz,2026002,ABCCDB
 ## Acciones masivas en la vista previa
 
 - `Registrar todas las válidas`: persiste todas las filas válidas de la importación.
-- `Registrar seleccionadas`: persiste el subconjunto visible de la tabla de vista previa.
+- `Registrar seleccionadas`: persiste el subconjunto visible de la tabla de vista previa (página + filtro actual).
+- La vista previa incluye:
+  - búsqueda rápida por `matrícula` o `nombre`,
+  - selector de `filas por página` (10/15/25/50),
+  - navegación por páginas para revisar lotes grandes sin recortar en duro.
 - Al finalizar el lote, se muestra un resumen con:
   - filas creadas,
   - filas actualizadas,
@@ -68,5 +72,5 @@ Se reportan por fila:
 ## Límites
 
 - Tamaño máximo de archivo: `2MB`.
-- Registros máximos por importación: `200`.
+- Registros máximos por importación: configurable por `VITE_IMPORT_MAX_ROWS` o `window.__APP_CONFIG__.import.maxRows` (fallback seguro: `200`).
 - Formato aceptado: `CSV UTF-8` (`.csv`) y `Excel` (`.xls` / `.xlsx`).
