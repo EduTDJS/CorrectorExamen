@@ -5,7 +5,12 @@ function StepRevision({
   iaEstado,
   desglosePreguntas,
   overridesDocente,
-  onOverrideDocente
+  onOverrideDocente,
+  checklistBajaConfianza,
+  onConfirmarRevisionBajaConfianza,
+  onEditarRespuestaBajaConfianza,
+  resumenBajaConfianzaRevision,
+  errorRevisionBajaConfianza
 }) {
   const preguntasBajaConfianza = desglosePreguntas
     .filter((item) => item.bajaConfianza && typeof item.confianzaOCR === 'number')
@@ -37,8 +42,14 @@ function StepRevision({
           <p>
             {preguntasBajaConfianza.map((item) => `#${item.numero} (${item.confianzaOCR.toFixed(1)}%)`).join(' · ')}
           </p>
+          <p>
+            <strong>Checklist baja confianza:</strong>{' '}
+            Revisadas {resumenBajaConfianzaRevision.revisadas} / {resumenBajaConfianzaRevision.total}
+            {' '}· Pendientes {resumenBajaConfianzaRevision.pendientes}
+          </p>
         </div>
       )}
+      {errorRevisionBajaConfianza && <p className="error">{errorRevisionBajaConfianza}</p>}
 
       <table className="tabla-respuestas">
         <caption>Desglose de revisión por pregunta</caption>
@@ -52,6 +63,7 @@ function StepRevision({
             <th scope="col">Fuente OCR</th>
             <th scope="col">Puntaje</th>
             <th scope="col">Override docente</th>
+            <th scope="col">Revisión baja confianza</th>
             <th scope="col">Razonamiento (expandible)</th>
           </tr>
         </thead>
@@ -76,6 +88,24 @@ function StepRevision({
                   onChange={(e) => onOverrideDocente(item.numero, e.target.value)}
                   placeholder="Auto"
                 />
+              </td>
+              <td>
+                {item.bajaConfianza ? (
+                  <div className="acciones-importacion-lote">
+                    <button
+                      type="button"
+                      onClick={() => onConfirmarRevisionBajaConfianza(item.numero)}
+                      disabled={Boolean(checklistBajaConfianza[item.numero])}
+                    >
+                      {checklistBajaConfianza[item.numero] ? 'Confirmada' : 'Confirm as read'}
+                    </button>
+                    <button type="button" onClick={() => onEditarRespuestaBajaConfianza(item.numero)}>
+                      Editar respuesta
+                    </button>
+                  </div>
+                ) : (
+                  '-'
+                )}
               </td>
               <td>
                 <details>

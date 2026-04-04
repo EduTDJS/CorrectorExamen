@@ -86,4 +86,24 @@ describe('StepIngresoRespuestas', () => {
     });
     expect(onCambiarEstrategiaConflicto).toHaveBeenCalledWith('sobrescribir_por_matricula');
   });
+
+  it('resalta preguntas con confianza OCR por debajo del umbral', () => {
+    render(
+      <StepIngresoRespuestas
+        {...crearProps({
+          datos: { modoIngreso: 'imagen', archivoImagen: null },
+          totalFilasTabla: 2,
+          respuestasLista: [
+            { respuesta: 'A', confianza: 60, fuenteLinea: 'OCR' },
+            { respuesta: 'B', confianza: 95, fuenteLinea: 'OCR' }
+          ]
+        })}
+      />
+    );
+
+    const filaBajaConfianza = screen.getByText('1').closest('tr');
+    const filaAltaConfianza = screen.getByText('2').closest('tr');
+    expect(filaBajaConfianza).toHaveClass('fila-baja-confianza');
+    expect(filaAltaConfianza).not.toHaveClass('fila-baja-confianza');
+  });
 });
