@@ -218,8 +218,15 @@ Además de logs de aplicación, se deben registrar y monitorear estos indicadore
 
 Fuentes de evidencia:
 
-- Evidencias JSON generadas por scripts en `backend/db/` (`*.evidence.json`).
-- Artefacto de CI del job programado de restore drill (`artifacts/restore-drill/restore-drill-evidence.json`).
+- Evidencias JSON generadas por scripts en `backend/db/` (`*.evidence.json`) durante la ejecución del pipeline.
+- Evidencia publicada como artefacto de CI por `actions/upload-artifact` en `.github/workflows/ci.yml` con nombre `restore-drill-evidence`.
+- Snapshot versionado en git **solo si** se decide conservar una muestra estable para auditoría/documentación (no es el flujo por defecto).
+
+### Cómo recuperar evidencia
+
+1. Abrir el run correspondiente en **GitHub Actions** (job `restore-drill`).
+2. Descargar el artefacto `restore-drill-evidence`.
+3. Descomprimir y validar que exista `restore-drill-evidence.json` en el contenido descargado.
 
 Alertas sugeridas:
 
@@ -237,7 +244,7 @@ Referencias concretas para el checklist final del roadmap:
 - **Pruebas y artefactos CI asociados:**
   - Job `e2e-critical` con artefacto `e2e-critical-flow-evidence` en `.github/workflows/ci.yml`.
   - Job `restore-drill` con artefacto `restore-drill-evidence` en `.github/workflows/ci.yml`.
-  - Evidencia esperada en repositorio: `artifacts/restore-drill/restore-drill-evidence.json`.
+  - Evidencia esperada: publicada como artefacto de CI (descargable desde el run), no como archivo versionado en git por defecto.
 - **Estado del dashboard externo:**
   - Estado: **pendiente** (no hay URL de panel operativo registrada en este repositorio al 2026-03-30).
   - Criterio para cerrar: registrar URL + nombre del panel + fecha de última verificación + responsable en este documento y en `docs/improvements-roadmap.md`.
