@@ -68,6 +68,7 @@ const formularioInicial = {
 };
 
 function App() {
+  const [vistaActual, setVistaActual] = useState("inicio");
   const [datos, setDatos] = useState(formularioInicial);
   const [errores, setErrores] = useState({});
   const [respuestasLista, setRespuestasLista] = useState([]);
@@ -980,6 +981,8 @@ function App() {
       <TopBar
         panelAjustesAbierto={panelAjustesAbierto}
         onToggleAjustes={() => setPanelAjustesAbierto((previo) => !previo)}
+        vistaActual={vistaActual}
+        onCambiarVista={setVistaActual}
       />
 
       {panelAjustesAbierto && (
@@ -1000,10 +1003,72 @@ function App() {
         </section>
       )}
 
-      <StepIndicator pasos={pasos} pasoActual={pasoActual} />
+      {vistaActual === "inicio" && (
+        <section className="panel landing">
+          <h2>Inicia rápido la corrección de exámenes</h2>
+          <p className="detalle">
+            Desde este módulo puedes configurar una evaluación por materia,
+            capturar respuestas, revisar sugerencias de puntuación y exportar
+            reportes.
+          </p>
+          <ul>
+            <li>✅ Flujo guiado de 4 pasos para evitar omisiones.</li>
+            <li>
+              ✅ Importación manual, por archivo (CSV/Excel) y por OCR de
+              imágenes.
+            </li>
+            <li>✅ Historial agrupado por materia para gestionar carpetas.</li>
+          </ul>
+          <button type="button" onClick={() => setVistaActual("correccion")}>
+            Ir al corrector
+          </button>
+        </section>
+      )}
 
-      <section className="panel">
-        {pasoActual === 0 && (
+      {vistaActual === "organizacion" && (
+        <section className="panel organizacion-panel">
+          <h2>¿Cómo organizar las carpetas de información?</h2>
+          <p className="detalle">
+            La plataforma crea una carpeta lógica por materia usando un
+            identificador normalizado (<code>materiaFolderId</code>). Esto te
+            permite separar reportes por asignatura sin importar mayúsculas,
+            acentos o variaciones de nombre.
+          </p>
+          <p className="detalle">
+            Recomendación práctica: usa un estándar de nombres como
+            <strong> "Matemáticas 1", "Física", "Lengua Española"</strong> para
+            que la agrupación sea consistente en exportaciones y filtros.
+          </p>
+
+          <h3>Carpetas detectadas actualmente</h3>
+          {reportesAgrupadosPorMateria.length === 0 ? (
+            <p className="detalle">
+              Aún no hay reportes guardados. Al guardar el primero, aparecerá
+              aquí su carpeta por materia.
+            </p>
+          ) : (
+            <ul className="lista-carpetas">
+              {reportesAgrupadosPorMateria.map((carpeta) => (
+                <li key={carpeta.materiaFolderId}>
+                  <strong>{carpeta.materia}</strong> — {carpeta.totalReportes}{" "}
+                  reporte(s)
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <button type="button" onClick={() => setVistaActual("correccion")}>
+            Abrir módulo de corrección
+          </button>
+        </section>
+      )}
+
+      {vistaActual === "correccion" && (
+        <>
+          <StepIndicator pasos={pasos} pasoActual={pasoActual} />
+
+          <section className="panel">
+            {pasoActual === 0 && (
           <StepConfiguracion
             datos={datos}
             errores={errores}
@@ -1025,33 +1090,33 @@ function App() {
           />
         )}
 
-        {pasoActual === 1 && (
-      <StepIngresoRespuestas
-            datos={datos}
-            errores={errores}
-            actualizarDato={actualizarDato}
-            textoManual={textoManual}
-            setRespuestasLista={setRespuestasLista}
-            convertirTextoALista={convertirTextoALista}
-            totalPreguntasNumero={totalPreguntasNumero}
-            procesarImagenConOCR={procesarImagenConOCR}
-            ocrEstado={ocrEstado}
-            totalFilasTabla={totalFilasTabla}
-            respuestasLista={respuestasLista}
-            actualizarRespuesta={actualizarRespuesta}
-            letrasValidas={letrasValidas}
-            umbralBajaConfianza={UMBRAL_BAJA_CONFIANZA}
-            importacionEstado={importacionEstado}
-            onArchivoImportacion={importarArchivoRespuestas}
-            onTextoImportacion={importarTextoRespuestas}
-        onAplicarFilaImportada={aplicarFilaImportada}
-        onRegistrarFilasImportadas={registrarFilasImportadas}
-        resumenRegistroLote={resumenRegistroLote}
-        estrategiaConflictoImportacion={estrategiaConflictoImportacion}
-        onCambiarEstrategiaConflicto={setEstrategiaConflictoImportacion}
-        resumenEstrategiaImportacion={resumenEstrategiaImportacion}
-      />
-        )}
+            {pasoActual === 1 && (
+              <StepIngresoRespuestas
+                datos={datos}
+                errores={errores}
+                actualizarDato={actualizarDato}
+                textoManual={textoManual}
+                setRespuestasLista={setRespuestasLista}
+                convertirTextoALista={convertirTextoALista}
+                totalPreguntasNumero={totalPreguntasNumero}
+                procesarImagenConOCR={procesarImagenConOCR}
+                ocrEstado={ocrEstado}
+                totalFilasTabla={totalFilasTabla}
+                respuestasLista={respuestasLista}
+                actualizarRespuesta={actualizarRespuesta}
+                letrasValidas={letrasValidas}
+                umbralBajaConfianza={UMBRAL_BAJA_CONFIANZA}
+                importacionEstado={importacionEstado}
+                onArchivoImportacion={importarArchivoRespuestas}
+                onTextoImportacion={importarTextoRespuestas}
+                onAplicarFilaImportada={aplicarFilaImportada}
+                onRegistrarFilasImportadas={registrarFilasImportadas}
+                resumenRegistroLote={resumenRegistroLote}
+                estrategiaConflictoImportacion={estrategiaConflictoImportacion}
+                onCambiarEstrategiaConflicto={setEstrategiaConflictoImportacion}
+                resumenEstrategiaImportacion={resumenEstrategiaImportacion}
+              />
+            )}
 
         {pasoActual === 2 && (
           <StepRevision
@@ -1070,51 +1135,55 @@ function App() {
           />
         )}
 
-        {pasoActual === 3 && (
-          <StepReporteFinal
-            datos={datos}
-            notaFinalNumerica={notaFinalNumerica}
-            letraFinal={letraFinal}
-            decisionFinal={decisionFinal}
-            setDecisionFinal={setDecisionFinal}
-            errores={errores}
-            guardarReporte={guardarReporte}
-            exportarReporteActual={exportarReporteActual}
-            reporteActualGuardado={reporteActualGuardado}
-            bloqueoRevisionBajaConfianza={resumenBajaConfianzaRevision.pendientes > 0}
-            resumenBajaConfianzaRevision={resumenBajaConfianzaRevision}
-            filtrosHistorial={filtrosHistorial}
-            setFiltrosHistorial={setFiltrosHistorial}
-            reportesFiltrados={reportesFiltrados}
-            reportesAgrupadosPorMateria={reportesAgrupadosPorMateria}
-            estadisticasGrupo={estadisticasGrupo}
-            exportarGrupoCSV={() => exportarGrupoCSV(reportesFiltrados)}
-        exportarCarpetaMateriaCSV={exportarCarpetaMateriaCSV}
-        errorSesion={errorSesionUi || errorSesionReportes}
-        operacionesImportacion={operacionesImportacion}
-        exportarOperacionesImportacion={exportarOperacionesImportacion}
-      />
-        )}
-      </section>
+            {pasoActual === 3 && (
+              <StepReporteFinal
+                datos={datos}
+                notaFinalNumerica={notaFinalNumerica}
+                letraFinal={letraFinal}
+                decisionFinal={decisionFinal}
+                setDecisionFinal={setDecisionFinal}
+                errores={errores}
+                guardarReporte={guardarReporte}
+                exportarReporteActual={exportarReporteActual}
+                reporteActualGuardado={reporteActualGuardado}
+                bloqueoRevisionBajaConfianza={
+                  resumenBajaConfianzaRevision.pendientes > 0
+                }
+                resumenBajaConfianzaRevision={resumenBajaConfianzaRevision}
+                filtrosHistorial={filtrosHistorial}
+                setFiltrosHistorial={setFiltrosHistorial}
+                reportesFiltrados={reportesFiltrados}
+                reportesAgrupadosPorMateria={reportesAgrupadosPorMateria}
+                estadisticasGrupo={estadisticasGrupo}
+                exportarGrupoCSV={() => exportarGrupoCSV(reportesFiltrados)}
+                exportarCarpetaMateriaCSV={exportarCarpetaMateriaCSV}
+                errorSesion={errorSesionUi || errorSesionReportes}
+                operacionesImportacion={operacionesImportacion}
+                exportarOperacionesImportacion={exportarOperacionesImportacion}
+              />
+            )}
+          </section>
 
-      {estadoActual.cargando && <p className="info">Procesando paso...</p>}
+          {estadoActual.cargando && <p className="info">Procesando paso...</p>}
 
-      <footer className="acciones">
-        <button
-          type="button"
-          onClick={() => retrocederPaso(() => setErrores({}))}
-          disabled={pasoActual === 0 || estadoActual.cargando}
-        >
-          Anterior
-        </button>
-        <button
-          type="button"
-          onClick={() => avanzarPaso(validarPaso)}
-          disabled={pasoActual === pasos.length - 1 || estadoActual.cargando}
-        >
-          {estadoActual.cargando ? "Cargando..." : "Siguiente"}
-        </button>
-      </footer>
+          <footer className="acciones">
+            <button
+              type="button"
+              onClick={() => retrocederPaso(() => setErrores({}))}
+              disabled={pasoActual === 0 || estadoActual.cargando}
+            >
+              Anterior
+            </button>
+            <button
+              type="button"
+              onClick={() => avanzarPaso(validarPaso)}
+              disabled={pasoActual === pasos.length - 1 || estadoActual.cargando}
+            >
+              {estadoActual.cargando ? "Cargando..." : "Siguiente"}
+            </button>
+          </footer>
+        </>
+      )}
     </main>
   );
 }
