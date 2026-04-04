@@ -106,7 +106,7 @@ src/
 - Normalización de respuestas: mayúsculas y tolerancia OCR (`4→A`, `8→B`, `(→C`, `0/O/Q→D`).
 - Política de duplicados: para matrícula repetida en el mismo archivo se conserva la última fila válida.
 - Límite de archivo: **2MB**.
-- Máximo de filas por importación: **200**.
+- Máximo de filas por importación: configurable con `VITE_IMPORT_MAX_ROWS` o `window.__APP_CONFIG__.import.maxRows` (fallback seguro: **200**).
 - Formatos soportados: **CSV UTF-8** (`.csv`) y **Excel** (`.xlsx` OpenXML y `.xls` SpreadsheetML/XML 2003).
 - Validaciones homogéneas entre CSV y Excel: encabezados con alias (`nombre/matrícula/respuesta`), contrato por fila (`REQUIRED_FIELDS` + `validarSchema`), deduplicación por matrícula y límites de tamaño/filas.
 - El paso de ingreso permite previsualizar filas válidas, revisar errores por registro y cargar una fila al formulario para corrección manual antes de guardar.

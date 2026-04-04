@@ -1,5 +1,5 @@
 import { detectarMatriculasDuplicadas } from '../hooks/useReportes';
-import { parsearArchivoImportacion, parsearTextoImportacion, validarArchivoImportacion } from './importService';
+import { obtenerImportLimits, parsearArchivoImportacion, parsearTextoImportacion, validarArchivoImportacion } from './importService';
 
 const crearArchivoXlsx = (rows) => {
   const xmlEscape = (value = '') => String(value)
@@ -24,6 +24,10 @@ const crearArchivoXlsx = (rows) => {
 };
 
 describe('importService', () => {
+  afterEach(() => {
+    delete globalThis.__APP_CONFIG__;
+  });
+
   it('valida extensión soportada', () => {
     const file = new File(['pdf'], 'lote.pdf', { type: 'application/pdf' });
     expect(() => validarArchivoImportacion(file)).toThrow(/Formato no soportado/);
@@ -48,6 +52,26 @@ describe('importService', () => {
     });
     expect(resultado.filas[0].estudianteNombre).toBe('Ana Dup');
     expect(resultado.errores[0].fila).toBe(3);
+  });
+
+  it('permite configurar maxRows por app config con fallback seguro', async () => {
+    globalThis.__APP_CONFIG__ = { import: { maxRows: 2 } };
+    expect(obtenerImportLimits().maxRows).toBe(2);
+
+    const csv = [
+      'estudianteNombre,estudianteMatricula,respuestas',
+      'Ana,2023001,ABCD',
+      'Luis,2023002,ABCD',
+      'Eva,2023003,ABCD'
+    ].join('\n');
+    const file = new File([csv], 'respuestas.csv', { type: 'text/csv' });
+
+    await expect(parsearArchivoImportacion({ file, totalPreguntas: 4 }))
+      .rejects
+      .toThrow(/límite de 2 registros/);
+
+    globalThis.__APP_CONFIG__ = { import: { maxRows: 'invalido' } };
+    expect(obtenerImportLimits().maxRows).toBe(200);
   });
 
   it('parsea .xlsx (caso feliz) y aplica contrato homogéneo', async () => {

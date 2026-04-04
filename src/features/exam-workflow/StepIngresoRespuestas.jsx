@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { obtenerRespuestaTexto } from '../../utils/examUtils';
 
 function StepIngresoRespuestas({
@@ -25,7 +25,34 @@ function StepIngresoRespuestas({
 }) {
   const [mostrarModalPegado, setMostrarModalPegado] = useState(false);
   const [textoPegado, setTextoPegado] = useState('');
+  const [filasPorPagina, setFilasPorPagina] = useState(15);
+  const [paginaActual, setPaginaActual] = useState(1);
+  const [busquedaFilas, setBusquedaFilas] = useState('');
   const esDispositivoMovil = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent);
+
+  const normalizarTextoBusqueda = (texto = '') => String(texto)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+  const filasFiltradas = useMemo(() => {
+    const termino = normalizarTextoBusqueda(busquedaFilas);
+    if (!termino) {
+      return importacionEstado.filas;
+    }
+
+    return importacionEstado.filas.filter((fila) => {
+      const nombre = normalizarTextoBusqueda(fila.estudianteNombre);
+      const matricula = normalizarTextoBusqueda(fila.estudianteMatricula);
+      return nombre.includes(termino) || matricula.includes(termino);
+    });
+  }, [busquedaFilas, importacionEstado.filas]);
+
+  const totalPaginas = Math.max(1, Math.ceil(filasFiltradas.length / filasPorPagina));
+  const paginaSegura = Math.min(paginaActual, totalPaginas);
+  const inicioPagina = (paginaSegura - 1) * filasPorPagina;
+  const filasVisibles = filasFiltradas.slice(inicioPagina, inicioPagina + filasPorPagina);
 
   const descargarPlantilla = () => {
     const contenido = 'estudianteNombre,estudianteMatricula,respuestas\n';
@@ -117,10 +144,42 @@ function StepIngresoRespuestas({
             {importacionEstado.filas.length > 0 && (
               <>
                 <div className="acciones-importacion-lote">
+                  <label>
+                    Buscar por matrícula o nombre
+                    <input
+                      type="search"
+                      value={busquedaFilas}
+                      onChange={(e) => {
+                        setBusquedaFilas(e.target.value);
+                        setPaginaActual(1);
+                      }}
+                      placeholder="Ej: 2026001 o Ana Pérez"
+                    />
+                  </label>
+                  <label>
+                    Filas por página
+                    <select
+                      value={filasPorPagina}
+                      onChange={(e) => {
+                        setFilasPorPagina(Number(e.target.value));
+                        setPaginaActual(1);
+                      }}
+                    >
+                      {[10, 15, 25, 50].map((valor) => (
+                        <option key={valor} value={valor}>{valor}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <p className="detalle">
+                  Mostrando {filasVisibles.length} de {filasFiltradas.length} filas
+                  {busquedaFilas.trim() ? ` (filtradas de ${importacionEstado.filas.length})` : ''}.
+                </p>
+                <div className="acciones-importacion-lote">
                   <button type="button" onClick={() => onRegistrarFilasImportadas()} aria-label="Registrar todas las filas válidas importadas">
                     Registrar todas las válidas
                   </button>
-                  <button type="button" onClick={() => onRegistrarFilasImportadas(importacionEstado.filas.slice(0, 15))} aria-label="Registrar solo las filas mostradas en la vista previa">
+                  <button type="button" onClick={() => onRegistrarFilasImportadas(filasVisibles)} aria-label="Registrar solo las filas mostradas en la vista previa">
                     Registrar seleccionadas
                   </button>
                 </div>
@@ -136,7 +195,7 @@ function StepIngresoRespuestas({
                     </tr>
                   </thead>
                   <tbody>
-                    {importacionEstado.filas.slice(0, 15).map((fila) => (
+                    {filasVisibles.map((fila) => (
                       <tr key={`import-row-${fila.fila}`}>
                         <td>{fila.fila}</td>
                         <td>{fila.estudianteMatricula}</td>
@@ -151,6 +210,15 @@ function StepIngresoRespuestas({
                     ))}
                   </tbody>
                 </table>
+                <div className="acciones-importacion-lote">
+                  <button type="button" onClick={() => setPaginaActual((prev) => Math.max(prev - 1, 1))} disabled={paginaSegura === 1}>
+                    Página anterior
+                  </button>
+                  <span className="detalle">Página {paginaSegura} de {totalPaginas}</span>
+                  <button type="button" onClick={() => setPaginaActual((prev) => Math.min(prev + 1, totalPaginas))} disabled={paginaSegura === totalPaginas}>
+                    Página siguiente
+                  </button>
+                </div>
               </>
             )}
 
