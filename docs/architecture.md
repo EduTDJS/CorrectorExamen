@@ -104,6 +104,7 @@ Para mantener consistencia con `docs/improvements-roadmap.md` (checklist final),
 - **Prueba E2E crítica**: `e2e/roadmap-critical-flow.spec.js`, `e2e/fixtures/mockData.js` y artefacto CI `e2e-critical-flow-evidence` en `.github/workflows/ci.yml`.
 - **Observabilidad operativa**: endpoints `GET /api/metrics` y `GET /metrics` documentados en `docs/observability.md`.
 - **Dashboard externo del roadmap**: publicado y activo. Referencia oficial: `https://monitoring.calificaya.com/d/flujo-sugerencia-operativo` (panel `CalificaYa · Sugerencia IA (p95 + error rate)`, última verificación `2026-04-04`, responsable `María Fernanda López (SRE)`, owner `Platform & SRE`, target_date `2026-04-15`, status `activo`), en espejo con `docs/observability.md`.
+  - Última verificación (ISO-8601): `2026-04-04`.
 
 ## Flujo de importación masiva (CSV/Excel)
 
