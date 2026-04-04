@@ -18,7 +18,7 @@ Consulta la guía de contribución en [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Requisitos
 
-- Node.js 18+
+- Node.js 20+
 - npm 9+
 
 ## Scripts
