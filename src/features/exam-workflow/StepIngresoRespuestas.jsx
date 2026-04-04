@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { obtenerRespuestaTexto } from '../../utils/examUtils';
 
 function StepIngresoRespuestas({
@@ -17,11 +18,32 @@ function StepIngresoRespuestas({
   umbralBajaConfianza,
   importacionEstado,
   onArchivoImportacion,
+  onTextoImportacion,
   onAplicarFilaImportada,
   onRegistrarFilasImportadas,
   resumenRegistroLote
 }) {
+  const [mostrarModalPegado, setMostrarModalPegado] = useState(false);
+  const [textoPegado, setTextoPegado] = useState('');
   const esDispositivoMovil = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent);
+
+  const descargarPlantilla = () => {
+    const contenido = 'estudianteNombre,estudianteMatricula,respuestas\n';
+    const blob = new Blob([contenido], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const enlace = document.createElement('a');
+    enlace.href = url;
+    enlace.download = 'plantilla-importacion-respuestas.csv';
+    document.body.appendChild(enlace);
+    enlace.click();
+    document.body.removeChild(enlace);
+    URL.revokeObjectURL(url);
+  };
+
+  const importarDesdeTexto = async () => {
+    await onTextoImportacion(textoPegado);
+    setMostrarModalPegado(false);
+  };
 
   return (
     <div className="paso">
@@ -45,12 +67,40 @@ function StepIngresoRespuestas({
             <p className="detalle">Campos requeridos: estudianteNombre, estudianteMatricula, respuestas.</p>
             <label>
               Archivo de importación
-              <input
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                onChange={(e) => onArchivoImportacion(e.target.files?.[0] || null)}
-              />
+              <div className="acciones-entrada-importacion">
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  onChange={(e) => onArchivoImportacion(e.target.files?.[0] || null)}
+                />
+                <button type="button" onClick={descargarPlantilla} aria-label="Descargar plantilla CSV con encabezados obligatorios">
+                  Descargar plantilla
+                </button>
+                <button type="button" onClick={() => setMostrarModalPegado(true)} aria-label="Abrir modal para pegar datos desde Excel o Google Sheets">
+                  Pegar desde Excel/Sheets
+                </button>
+              </div>
             </label>
+
+            {mostrarModalPegado && (
+              <div className="modal-importacion" role="dialog" aria-modal="true" aria-label="Pegar desde Excel o Google Sheets">
+                <div className="modal-importacion-contenido">
+                  <h4>Pegar desde Excel/Sheets</h4>
+                  <p className="detalle">Pegue contenido TSV o CSV con encabezados: estudianteNombre, estudianteMatricula, respuestas.</p>
+                  <textarea
+                    rows="8"
+                    value={textoPegado}
+                    onChange={(e) => setTextoPegado(e.target.value)}
+                    placeholder={'estudianteNombre\testudianteMatricula\trespuestas\nAna Pérez\t2026001\tABCD'}
+                  />
+                  <div className="acciones-importacion-lote">
+                    <button type="button" onClick={importarDesdeTexto}>Importar texto pegado</button>
+                    <button type="button" onClick={() => setMostrarModalPegado(false)}>Cancelar</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {importacionEstado.error && <p className="error">{importacionEstado.error}</p>}
             {importacionEstado.resumen && (
               <p className="detalle">

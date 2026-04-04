@@ -32,7 +32,7 @@ const mapearHeaders = (headers = []) => headers.reduce((acc, header) => {
   return acc;
 }, {});
 
-const parseCsvLine = (line = '') => {
+const parseDelimitedLine = (line = '', delimiter = ',') => {
   const out = [];
   let current = '';
   let inQuotes = false;
@@ -52,7 +52,7 @@ const parseCsvLine = (line = '') => {
       continue;
     }
 
-    if (char === ',' && !inQuotes) {
+    if (char === delimiter && !inQuotes) {
       out.push(current.trim());
       current = '';
       continue;
@@ -65,8 +65,15 @@ const parseCsvLine = (line = '') => {
   return out;
 };
 
-const parseCsvText = (csvText = '') => {
-  const lines = String(csvText)
+const detectarDelimitador = (rawText = '') => {
+  const primeraLinea = String(rawText).split(/\r?\n/).find((line) => String(line).trim()) || '';
+  const tabs = (primeraLinea.match(/\t/g) || []).length;
+  const comas = (primeraLinea.match(/,/g) || []).length;
+  return tabs > comas ? '\t' : ',';
+};
+
+const parseDelimitedText = (text = '', delimiter = ',') => {
+  const lines = String(text)
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
@@ -75,15 +82,17 @@ const parseCsvText = (csvText = '') => {
     return [];
   }
 
-  const headers = parseCsvLine(lines[0]);
+  const headers = parseDelimitedLine(lines[0], delimiter);
   return lines.slice(1).map((line) => {
-    const columns = parseCsvLine(line);
+    const columns = parseDelimitedLine(line, delimiter);
     return headers.reduce((row, header, index) => {
       row[header] = columns[index] || '';
       return row;
     }, {});
   });
 };
+
+const parseCsvText = (csvText = '') => parseDelimitedText(csvText, ',');
 
 const obtenerExtension = (filename = '') => {
   const parts = filename.split('.');
@@ -299,13 +308,9 @@ const parseByExtension = async (file, extension) => {
   throw new Error('Formato no soportado. Use CSV UTF-8 (.csv) o Excel (.xls/.xlsx).');
 };
 
-export const parsearArchivoImportacion = async ({ file, totalPreguntas }) => {
-  const extension = validarArchivoImportacion(file);
-
-  const rawRows = await parseByExtension(file, extension);
-
+const construirResultadoImportacion = ({ rawRows, totalPreguntas, filaInicial = 2 }) => {
   if (rawRows.length > IMPORT_LIMITS.maxRows) {
-    throw new Error(`El archivo supera el límite de ${IMPORT_LIMITS.maxRows} registros.`);
+    throw new Error(`La importación supera el límite de ${IMPORT_LIMITS.maxRows} registros.`);
   }
 
   const headersMap = mapearHeaders(Object.keys(rawRows[0] || {}));
@@ -315,7 +320,7 @@ export const parsearArchivoImportacion = async ({ file, totalPreguntas }) => {
   const seenMatriculas = new Map();
 
   rawRows.forEach((row, index) => {
-    const fila = index + 2;
+    const fila = index + filaInicial;
     const canonico = Object.entries(row).reduce((acc, [key, value]) => {
       acc[headersMap[key] || key] = typeof value === 'string' ? value.trim() : value;
       return acc;
@@ -376,4 +381,30 @@ export const parsearArchivoImportacion = async ({ file, totalPreguntas }) => {
       politicaDuplicados: 'Si se repite matrícula, se conserva el último registro válido del archivo.'
     }
   };
+};
+
+export const parsearArchivoImportacion = async ({ file, totalPreguntas }) => {
+  const extension = validarArchivoImportacion(file);
+  const rawRows = await parseByExtension(file, extension);
+
+  if (!rawRows.length) {
+    throw new Error('El archivo no contiene filas de datos.');
+  }
+
+  return construirResultadoImportacion({ rawRows, totalPreguntas, filaInicial: 2 });
+};
+
+export const parsearTextoImportacion = ({ text, totalPreguntas }) => {
+  if (!String(text || '').trim()) {
+    throw new Error('Pegue contenido CSV/TSV antes de importar.');
+  }
+
+  const delimiter = detectarDelimitador(text);
+  const rawRows = parseDelimitedText(text, delimiter);
+
+  if (!rawRows.length) {
+    throw new Error('No se detectaron filas válidas en el texto pegado.');
+  }
+
+  return construirResultadoImportacion({ rawRows, totalPreguntas, filaInicial: 2 });
 };
