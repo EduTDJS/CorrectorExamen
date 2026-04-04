@@ -17,7 +17,9 @@ function StepIngresoRespuestas({
   umbralBajaConfianza,
   importacionEstado,
   onArchivoImportacion,
-  onAplicarFilaImportada
+  onAplicarFilaImportada,
+  onRegistrarFilasImportadas,
+  resumenRegistroLote
 }) {
   const esDispositivoMovil = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent);
 
@@ -63,33 +65,50 @@ function StepIngresoRespuestas({
             )}
 
             {importacionEstado.filas.length > 0 && (
-              <table className="tabla-respuestas">
-                <caption>Vista previa de filas importadas</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Fila</th>
-                    <th scope="col">Matrícula</th>
-                    <th scope="col">Nombre</th>
-                    <th scope="col">Respuestas</th>
-                    <th scope="col">Acción</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {importacionEstado.filas.slice(0, 15).map((fila) => (
-                    <tr key={`import-row-${fila.fila}`}>
-                      <td>{fila.fila}</td>
-                      <td>{fila.estudianteMatricula}</td>
-                      <td>{fila.estudianteNombre}</td>
-                      <td>{fila.respuestasTexto}</td>
-                      <td>
-                        <button type="button" onClick={() => onAplicarFilaImportada(fila)} aria-label={`Cargar fila ${fila.fila} de ${fila.estudianteNombre} en el formulario`}>
-                          Cargar en formulario
-                        </button>
-                      </td>
+              <>
+                <div className="acciones-importacion-lote">
+                  <button type="button" onClick={() => onRegistrarFilasImportadas()} aria-label="Registrar todas las filas válidas importadas">
+                    Registrar todas las válidas
+                  </button>
+                  <button type="button" onClick={() => onRegistrarFilasImportadas(importacionEstado.filas.slice(0, 15))} aria-label="Registrar solo las filas mostradas en la vista previa">
+                    Registrar seleccionadas
+                  </button>
+                </div>
+                <table className="tabla-respuestas">
+                  <caption>Vista previa de filas importadas</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Fila</th>
+                      <th scope="col">Matrícula</th>
+                      <th scope="col">Nombre</th>
+                      <th scope="col">Respuestas</th>
+                      <th scope="col">Acción</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {importacionEstado.filas.slice(0, 15).map((fila) => (
+                      <tr key={`import-row-${fila.fila}`}>
+                        <td>{fila.fila}</td>
+                        <td>{fila.estudianteMatricula}</td>
+                        <td>{fila.estudianteNombre}</td>
+                        <td>{fila.respuestasTexto}</td>
+                        <td>
+                          <button type="button" onClick={() => onAplicarFilaImportada(fila)} aria-label={`Cargar fila ${fila.fila} de ${fila.estudianteNombre} en el formulario`}>
+                            Cargar en formulario
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+
+            {resumenRegistroLote && (
+              <p className="resumen-importacion-lote" role="status">
+                Registro por lote completado — Creados: {resumenRegistroLote.creados} · Actualizados: {resumenRegistroLote.actualizados}
+                {' '}· Omitidos: {resumenRegistroLote.omitidos} · Fallidos: {resumenRegistroLote.fallidos}
+              </p>
             )}
 
             {importacionEstado.errores.length > 0 && (
