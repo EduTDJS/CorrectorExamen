@@ -429,3 +429,93 @@ export const getReportVersion = async (reportId, versionNumber) => {
   const row = await storage.getReportVersion(reportId, versionNumber);
   return row ? fromVersionRow(row) : null;
 };
+
+const NORMALIZED_LETTERS = new Set(['A', 'B', 'C', 'D']);
+
+const extractOcrTraceRows = (report = {}) => {
+  if (Array.isArray(report?.ocrTrazabilidad) && report.ocrTrazabilidad.length > 0) {
+    return report.ocrTrazabilidad;
+  }
+
+  const lista = Array.isArray(report?.respuestas?.lista) ? report.respuestas.lista : [];
+  return lista.map((item, index) => ({
+    pregunta: index + 1,
+    ocrOriginalGuess: String(item?.ocrOriginalGuess || item?.respuesta || '').trim(),
+    ocrOriginalConfidence: typeof item?.ocrOriginalConfidence === 'number'
+      ? item.ocrOriginalConfidence
+      : typeof item?.confianza === 'number'
+        ? item.confianza
+        : null,
+    finalConfirmedAnswer: String(item?.respuesta || '').trim()
+  }));
+};
+
+const normalizeLetter = (value) => {
+  const normalized = String(value || '').trim().toUpperCase();
+  return NORMALIZED_LETTERS.has(normalized) ? normalized : '';
+};
+
+export const buildOcrCalibrationReport = async (accessScope = {}, { lowConfidenceThreshold = 65 } = {}) => {
+  const reports = await listReports(accessScope);
+  const confusionMatrix = {
+    A: { A: 0, B: 0, C: 0, D: 0 },
+    B: { A: 0, B: 0, C: 0, D: 0 },
+    C: { A: 0, B: 0, C: 0, D: 0 },
+    D: { A: 0, B: 0, C: 0, D: 0 }
+  };
+  const batches = new Map();
+
+  let totalQuestions = 0;
+  let exactMatches = 0;
+  let lowConfidenceTotal = 0;
+  let lowConfidenceErrors = 0;
+
+  reports.forEach((report) => {
+    const batchKey = [
+      String(report?.examen?.materia || 'sin_materia').trim(),
+      String(report?.examen?.grupo || 'sin_grupo').trim(),
+      String(report?.examen?.fecha || 'sin_fecha').trim()
+    ].join('|');
+    if (!batches.has(batchKey)) {
+      batches.set(batchKey, { totalQuestions: 0, exactMatches: 0 });
+    }
+    const batch = batches.get(batchKey);
+
+    extractOcrTraceRows(report).forEach((row) => {
+      const guess = normalizeLetter(row?.ocrOriginalGuess);
+      const confirmed = normalizeLetter(row?.finalConfirmedAnswer);
+      if (!guess || !confirmed) return;
+
+      totalQuestions += 1;
+      batch.totalQuestions += 1;
+      confusionMatrix[guess][confirmed] += 1;
+
+      if (guess === confirmed) {
+        exactMatches += 1;
+        batch.exactMatches += 1;
+      }
+
+      if (typeof row?.ocrOriginalConfidence === 'number' && row.ocrOriginalConfidence < lowConfidenceThreshold) {
+        lowConfidenceTotal += 1;
+        if (guess !== confirmed) {
+          lowConfidenceErrors += 1;
+        }
+      }
+    });
+  });
+
+  return {
+    generatedAt: nowIso(),
+    lowConfidenceThreshold,
+    totalReports: reports.length,
+    totalQuestions,
+    exactMatchRate: totalQuestions > 0 ? Number((exactMatches / totalQuestions).toFixed(6)) : 0,
+    lowConfidenceErrorRate: lowConfidenceTotal > 0 ? Number((lowConfidenceErrors / lowConfidenceTotal).toFixed(6)) : 0,
+    confusionMatrix,
+    batches: Array.from(batches.entries()).map(([batchKey, batch]) => ({
+      batchKey,
+      totalQuestions: batch.totalQuestions,
+      exactMatchRate: batch.totalQuestions > 0 ? Number((batch.exactMatches / batch.totalQuestions).toFixed(6)) : 0
+    }))
+  };
+};

@@ -5,7 +5,7 @@ export const STORAGE_DECISION_FINAL = 'corrector_decision_final';
 export const STORAGE_REPORTES = 'corrector_historial_reportes_v1';
 export const STORAGE_OPERACIONES_IMPORTACION = 'corrector_operaciones_importacion_v1';
 
-const SCHEMA_VERSION_REPORTES = 4;
+const SCHEMA_VERSION_REPORTES = 5;
 const SCHEMA_VERSION_DECISION_FINAL = 2;
 const SCHEMA_VERSION_OPERACIONES_IMPORTACION = 1;
 
@@ -95,6 +95,7 @@ const esReporteValido = (reporte) => esObjeto(reporte)
   && esObjeto(reporte.respuestas)
   && Array.isArray(reporte.respuestas.lista)
   && typeof reporte.respuestas.texto === 'string'
+  && Array.isArray(reporte.ocrTrazabilidad || [])
   && Array.isArray(reporte.puntuacionPorPregunta)
   && Array.isArray(reporte.justificacionesIA)
   && esObjeto(reporte.calificacionFinal)
@@ -115,6 +116,7 @@ const repararReporte = (reporte) => {
     examen: esObjeto(reporte.examen) ? reporte.examen : null,
     estudiante: esObjeto(reporte.estudiante) ? reporte.estudiante : null,
     respuestas: esObjeto(reporte.respuestas) ? reporte.respuestas : null,
+    ocrTrazabilidad: Array.isArray(reporte.ocrTrazabilidad) ? reporte.ocrTrazabilidad : [],
     puntuacionPorPregunta: Array.isArray(reporte.puntuacionPorPregunta) ? reporte.puntuacionPorPregunta : [],
     justificacionesIA: Array.isArray(reporte.justificacionesIA) ? reporte.justificacionesIA : null,
     calificacionFinal: esObjeto(reporte.calificacionFinal) ? reporte.calificacionFinal : null
@@ -161,6 +163,16 @@ const repararReporte = (reporte) => {
       lista: Array.isArray(base.respuestas.lista) ? base.respuestas.lista : [],
       texto: typeof base.respuestas.texto === 'string' ? base.respuestas.texto : ''
     },
+    ocrTrazabilidad: base.ocrTrazabilidad
+      .map((item, indice) => ({
+        pregunta: typeof item?.pregunta === 'number' ? item.pregunta : indice + 1,
+        ocrOriginalGuess: String(item?.ocrOriginalGuess || '').trim(),
+        ocrOriginalConfidence: typeof item?.ocrOriginalConfidence === 'number'
+          ? item.ocrOriginalConfidence
+          : null,
+        finalConfirmedAnswer: String(item?.finalConfirmedAnswer || '').trim(),
+        reglasNormalizacionVersion: String(item?.reglasNormalizacionVersion || 'ocr-map-v2').trim()
+      })),
     examen: {
       materia: normalizarTextoBase(base.examen.materia),
       grupo: typeof base.examen.grupo === 'string' ? base.examen.grupo : '',
@@ -244,6 +256,11 @@ const migrarReportes = (versionInicial, dataInicial) => {
     if (version === 3) {
       data = data.map((reporte) => repararReporte(reporte)).filter(Boolean);
       version = 4;
+      continue;
+    }
+    if (version === 4) {
+      data = data.map((reporte) => repararReporte(reporte)).filter(Boolean);
+      version = 5;
       continue;
     }
 

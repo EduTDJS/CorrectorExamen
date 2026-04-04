@@ -94,6 +94,44 @@ En formato Prometheus se publican además:
 - `correctorexamen_endpoint_latency_ms_p50{endpoint="/api/calificacion/sugerir"}`
 - `correctorexamen_endpoint_latency_ms_p95{endpoint="/api/calificacion/sugerir"}`
 
+## Métricas de calibración OCR por lote
+
+Se añadió un reporte agregado para calibración de OCR en persistencia de reportes:
+
+- Endpoint: `GET /api/reportes/calibracion`
+- Parámetro opcional: `lowConfidenceThreshold` (default `65`).
+- Respuesta agregada:
+  - `exactMatchRate`: tasa global de coincidencia exacta entre `ocrOriginalGuess` y `finalConfirmedAnswer`.
+  - `confusionMatrix`: matriz 4x4 (`A/B/C/D`) para errores de sustitución por letra.
+  - `lowConfidenceErrorRate`: tasa de error para filas con confianza OCR `< lowConfidenceThreshold`.
+  - `batches`: métricas por lote (`materia|grupo|fecha`), con `exactMatchRate` y total de preguntas.
+
+### Dashboard recomendado (OCR)
+
+Paneles mínimos:
+
+1. **Exact Match OCR global**
+   - Fuente: `GET /api/reportes/calibracion`.
+   - KPI: `exactMatchRate` (objetivo inicial ≥ `0.92`).
+2. **Low Confidence Error Rate**
+   - KPI: `lowConfidenceErrorRate`.
+   - Alerta sugerida: > `0.20` por 3 ventanas consecutivas.
+3. **Matriz de confusión OCR (heatmap)**
+   - Fuente: `confusionMatrix`.
+   - Uso: priorizar ajustes de normalización (ej. `8 -> B`, `| -> A`).
+
+### Señales de trazabilidad de OCR en reporte persistido
+
+Cada payload de reporte guarda `ocrTrazabilidad[]` con:
+
+- `pregunta`
+- `ocrOriginalGuess`
+- `ocrOriginalConfidence`
+- `finalConfirmedAnswer`
+- `reglasNormalizacionVersion`
+
+Esto permite reconstruir decisiones de normalización y comparar precisión por versión de regla.
+
 ### Método de cálculo (p95 y error rate)
 
 - `error_rate`:

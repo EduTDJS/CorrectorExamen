@@ -3,13 +3,18 @@ import {
   convertirTextoALista,
   mapearLetraPucmm,
   extraerJsonDeTexto,
-  parsearOCRPorNumeroPregunta
+  parsearOCRPorNumeroPregunta,
+  REGLAS_NORMALIZACION_VERSION
 } from './examUtils';
 
 describe('examUtils', () => {
   describe('limpiarRespuestas', () => {
     it('normaliza en mayúsculas y elimina caracteres no válidos', () => {
-      expect(limpiarRespuestas('aB x-c1d\n?')).toBe('ABCD');
+      expect(limpiarRespuestas('aB x-cd\n?')).toBe('ABCD');
+    });
+
+    it('aplica mapeos extendidos derivados de confusión OCR', () => {
+      expect(limpiarRespuestas('13<9')).toBe('ABCD');
     });
 
     it('acepta arreglo enriquecido', () => {
@@ -40,8 +45,20 @@ describe('examUtils', () => {
         ]
       });
 
-      expect(lista[0]).toEqual({ respuesta: 'A', confianza: 91.1, fuenteLinea: 'Línea 1' });
-      expect(lista[1]).toEqual({ respuesta: 'B', confianza: 54.3, fuenteLinea: 'Línea 2' });
+      expect(lista[0]).toMatchObject({
+        respuesta: 'A',
+        confianza: 91.1,
+        fuenteLinea: 'Línea 1',
+        ocrOriginalGuess: 'A',
+        ocrOriginalConfidence: 91.1,
+        reglasNormalizacionVersion: REGLAS_NORMALIZACION_VERSION
+      });
+      expect(lista[1]).toMatchObject({
+        respuesta: 'B',
+        confianza: 54.3,
+        fuenteLinea: 'Línea 2',
+        reglasNormalizacionVersion: REGLAS_NORMALIZACION_VERSION
+      });
       expect(lista[2]).toEqual({ respuesta: '', confianza: null, fuenteLinea: '' });
     });
 
@@ -54,9 +71,9 @@ describe('examUtils', () => {
         ]
       });
 
-      expect(lista[0]).toEqual({ respuesta: 'A', confianza: 76, fuenteLinea: 'OCR A' });
-      expect(lista[1]).toEqual({ respuesta: 'B', confianza: 72, fuenteLinea: 'OCR B' });
-      expect(lista[2]).toEqual({ respuesta: 'C', confianza: 78, fuenteLinea: 'OCR C' });
+      expect(lista[0]).toMatchObject({ respuesta: 'A', confianza: 76, fuenteLinea: 'OCR A' });
+      expect(lista[1]).toMatchObject({ respuesta: 'B', confianza: 72, fuenteLinea: 'OCR B' });
+      expect(lista[2]).toMatchObject({ respuesta: 'C', confianza: 78, fuenteLinea: 'OCR C' });
       expect(lista[3]).toEqual({ respuesta: '', confianza: null, fuenteLinea: '' });
     });
 
@@ -71,8 +88,8 @@ describe('examUtils', () => {
         ]
       });
 
-      expect(lista[0]).toEqual({ respuesta: 'C', confianza: 80, fuenteLinea: 'tercera' });
-      expect(lista[1]).toEqual({ respuesta: 'A', confianza: null, fuenteLinea: 'ultima' });
+      expect(lista[0]).toMatchObject({ respuesta: 'C', confianza: 80, fuenteLinea: 'tercera' });
+      expect(lista[1]).toMatchObject({ respuesta: 'A', confianza: null, fuenteLinea: 'ultima' });
     });
 
     it('aplica guardrails para números fuera de rango y secuencias imposibles', () => {
@@ -88,8 +105,8 @@ describe('examUtils', () => {
       expect(lista[0]).toEqual({ respuesta: '', confianza: null, fuenteLinea: '' });
       expect(lista[1]).toEqual({ respuesta: '', confianza: null, fuenteLinea: '' });
       expect(lista[2]).toEqual({ respuesta: '', confianza: null, fuenteLinea: '' });
-      expect(lista[3]).toEqual({ respuesta: 'D', confianza: 90, fuenteLinea: 'ruido' });
-      expect(lista[4]).toEqual({ respuesta: 'C', confianza: 70, fuenteLinea: 'valida' });
+      expect(lista[3]).toMatchObject({ respuesta: 'D', confianza: 90, fuenteLinea: 'ruido' });
+      expect(lista[4]).toMatchObject({ respuesta: 'C', confianza: 70, fuenteLinea: 'valida' });
     });
   });
 
