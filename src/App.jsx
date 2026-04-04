@@ -31,6 +31,8 @@ import {
   convertirTextoALista,
   letrasValidas,
   limpiarRespuestas,
+  obtenerRespuestaTexto,
+  REGLAS_NORMALIZACION_VERSION,
   mapearLetraPucmm,
 } from "./utils/examUtils";
 import { crearDesglosePregunta } from "./utils/questionBreakdown";
@@ -409,6 +411,22 @@ function App() {
         lista: fila.respuestasLista,
         texto: limpiarRespuestas(fila.respuestasLista),
       },
+      ocrTrazabilidad: fila.respuestasLista.map((respuestaData, indice) => ({
+        pregunta: indice + 1,
+        ocrOriginalGuess:
+          String(respuestaData?.ocrOriginalGuess || "").trim() ||
+          obtenerRespuestaTexto(respuestaData),
+        ocrOriginalConfidence:
+          typeof respuestaData?.ocrOriginalConfidence === "number"
+            ? respuestaData.ocrOriginalConfidence
+            : typeof respuestaData?.confianza === "number"
+              ? respuestaData.confianza
+              : null,
+        finalConfirmedAnswer: obtenerRespuestaTexto(respuestaData),
+        reglasNormalizacionVersion:
+          respuestaData?.reglasNormalizacionVersion ||
+          REGLAS_NORMALIZACION_VERSION,
+      })),
       puntuacionPorPregunta: desgloseFila,
       justificacionesIA: desgloseFila.map((item) => ({
         pregunta: item.numero,
@@ -808,6 +826,21 @@ function App() {
       matricula: datos.estudianteMatricula,
     },
     respuestas: { lista: respuestasLista, texto: respuestasLimpias },
+    ocrTrazabilidad: respuestasLista.map((respuestaData, indice) => ({
+      pregunta: indice + 1,
+      ocrOriginalGuess:
+        String(respuestaData?.ocrOriginalGuess || "").trim() ||
+        obtenerRespuestaTexto(respuestaData),
+      ocrOriginalConfidence:
+        typeof respuestaData?.ocrOriginalConfidence === "number"
+          ? respuestaData.ocrOriginalConfidence
+          : typeof respuestaData?.confianza === "number"
+            ? respuestaData.confianza
+            : null,
+      finalConfirmedAnswer: obtenerRespuestaTexto(respuestaData),
+      reglasNormalizacionVersion:
+        respuestaData?.reglasNormalizacionVersion || REGLAS_NORMALIZACION_VERSION,
+    })),
     puntuacionPorPregunta: desglosePreguntas,
     justificacionesIA: desglosePreguntas.map((item) => ({
       pregunta: item.numero,

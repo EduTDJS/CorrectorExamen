@@ -48,6 +48,7 @@ Este documento resume mejoras de alto impacto para evolucionar **CalificaYa** de
 - **Calibración de OCR por lote**
   - Métrica de confianza promedio por examen.
   - Reintento automático en zonas de baja calidad.
+  - Trazabilidad persistida por pregunta (`ocrOriginalGuess`, `ocrOriginalConfidence`, `finalConfirmedAnswer`) y reglas versionadas de normalización.
 
 ### Criterios de aceptación
 
@@ -55,6 +56,33 @@ Este documento resume mejoras de alto impacto para evolucionar **CalificaYa** de
 - **Consistencia de justificación**: respuestas con desalineación entre evidencia y justificación IA se marcan automáticamente para revisión docente.
 - **Métrica técnica**: exactitud OCR por lote ≥ 92% y precisión de detección de inconsistencias ≥ 85% en dataset de validación.
 - **Evidencia esperada**: pruebas de evaluación con datasets etiquetados, reporte de métricas OCR/consistencia y documento técnico de calibración de reglas.
+
+### Proceso operativo (calibración OCR continua)
+
+1. **Captura en persistencia**  
+   Confirmar que cada reporte nuevo guarda `ocrTrazabilidad[]` con señal original y respuesta final docente.
+2. **Reporte batch de calibración**  
+   Ejecutar `GET /api/reportes/calibracion` por ventana operativa (diaria/semanal) y registrar:
+   - `exactMatchRate`
+   - `lowConfidenceErrorRate`
+   - matriz `confusionMatrix`.
+3. **Ajuste de heurísticas versionadas**  
+   Con base en confusión recurrente, actualizar mapeos en `src/utils/examUtils.js` y subir versión (`reglasNormalizacionVersion`).
+4. **Validación posterior al cambio**  
+   Comparar métricas por lote antes/después del cambio en dashboard de observabilidad.
+5. **Trazabilidad documental**  
+   Reflejar resultados en `docs/observability.md` y, si cambia estrategia, registrar ADR.
+
+### Entry points de implementación
+
+- Frontend (generación/persistencia de trazabilidad):
+  - `src/App.jsx` (`generarReporteActual`, `generarReporteDesdeFilaImportada`).
+  - `src/services/storageService.js` (validación/migración del payload).
+- Normalización OCR versionada:
+  - `src/utils/examUtils.js`.
+- Agregado batch de métricas:
+  - `backend/repositories/reportRepository.js` (`buildOcrCalibrationReport`).
+  - `backend/server.js` (`GET /api/reportes/calibracion`).
 
 ## 4) Operación y confiabilidad (prioridad media)
 

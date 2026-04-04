@@ -720,6 +720,22 @@ describe("backend/server API", () => {
         },
         estudiante: { nombre: "Ana", matricula: "A1" },
         respuestas: { lista: ["A", "B"], texto: "AB" },
+        ocrTrazabilidad: [
+          {
+            pregunta: 1,
+            ocrOriginalGuess: "A",
+            ocrOriginalConfidence: 98,
+            finalConfirmedAnswer: "A",
+            reglasNormalizacionVersion: "ocr-map-v2",
+          },
+          {
+            pregunta: 2,
+            ocrOriginalGuess: "8",
+            ocrOriginalConfidence: 52,
+            finalConfirmedAnswer: "B",
+            reglasNormalizacionVersion: "ocr-map-v2",
+          },
+        ],
         puntuacionPorPregunta: [],
         justificacionesIA: [],
         calificacionFinal: {
@@ -757,6 +773,7 @@ describe("backend/server API", () => {
       });
       expect(byId.status).toBe(200);
       expect(byId.json.estudiante.nombre).toBe("Ana");
+      expect(byId.json.ocrTrazabilidad).toHaveLength(2);
 
       const updated = await apiRequest({
         baseUrl: app.baseUrl,
@@ -809,6 +826,70 @@ describe("backend/server API", () => {
           letra: "A",
         }),
       });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("GET /api/reportes/calibracion agrega métricas de OCR por lote", async () => {
+    const app = await loadServer({ provider: "openai" });
+
+    try {
+      const payload = {
+        examen: {
+          materia: "Contabilidad",
+          grupo: "A",
+          fecha: "2026-03-20",
+          totalPreguntas: 2,
+          claveRespuestas: "AB",
+        },
+        estudiante: { nombre: "Ana", matricula: "A1" },
+        respuestas: { lista: ["A", "B"], texto: "AB" },
+        ocrTrazabilidad: [
+          {
+            pregunta: 1,
+            ocrOriginalGuess: "A",
+            ocrOriginalConfidence: 95,
+            finalConfirmedAnswer: "A",
+          },
+          {
+            pregunta: 2,
+            ocrOriginalGuess: "D",
+            ocrOriginalConfidence: 40,
+            finalConfirmedAnswer: "B",
+          },
+        ],
+        puntuacionPorPregunta: [],
+        justificacionesIA: [],
+        calificacionFinal: {
+          notaSobre100: 80,
+          letra: "B",
+          justificacionDocente: "Bien",
+        },
+      };
+
+      const created = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: "/api/reportes",
+        method: "POST",
+        body: payload,
+      });
+      expect(created.status).toBe(201);
+
+      const calibration = await apiRequest({
+        baseUrl: app.baseUrl,
+        path: "/api/reportes/calibracion?lowConfidenceThreshold=65",
+      });
+      expect(calibration.status).toBe(200);
+      expect(calibration.json.data).toMatchObject({
+        totalReports: 1,
+        totalQuestions: 2,
+        exactMatchRate: 0.5,
+        lowConfidenceErrorRate: 1,
+      });
+      expect(calibration.json.data.confusionMatrix.A.A).toBe(1);
+      expect(calibration.json.data.confusionMatrix.D.B).toBe(1);
+      expect(calibration.json.data.batches).toHaveLength(1);
     } finally {
       await app.close();
     }

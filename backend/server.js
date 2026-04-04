@@ -10,6 +10,7 @@ import {
   getReportVersion,
   listReports,
   listReportVersions,
+  buildOcrCalibrationReport,
   updateReport,
   deleteReport,
 } from "./repositories/reportRepository.js";
@@ -1169,6 +1170,24 @@ const handler = async (req, res) => {
       );
     }
     return;
+  }
+
+  if (req.method === "GET" && req.url?.startsWith("/api/reportes/calibracion")) {
+    return runProtectedAction({
+      req,
+      res,
+      requestId,
+      action: "view_history",
+      resource: "/api/reportes/calibracion",
+      onAllowed: async () => {
+        const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+        const threshold = Number(url.searchParams.get("lowConfidenceThreshold") || 65);
+        const calibration = await buildOcrCalibrationReport(getReportAccessScope(req.user), {
+          lowConfidenceThreshold: Number.isFinite(threshold) ? threshold : 65,
+        });
+        sendJson(res, 200, { data: calibration }, { requestId });
+      },
+    });
   }
 
   const parsedUrl = new URL(

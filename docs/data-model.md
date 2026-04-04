@@ -52,6 +52,7 @@ rosters (listas por grupo/periodo) ────< roster_students (N)
 - FK: `exam_id`, `student_id`.
 - Relación 1:1 con `reports` por `report_id` (único).
 - Campos: `submitted_at`, `responses_json`, `source_text`, `ownership_json`.
+- `responses_json` puede incluir metadata OCR por pregunta (`ocrOriginalGuess`, `ocrOriginalConfidence`, `reglasNormalizacionVersion`) que luego se proyecta en `reports.payload_json`.
 
 ### `grades`
 
@@ -132,6 +133,15 @@ Se mantiene para compatibilidad y lectura rápida como snapshot serializado del 
 ```
 
 `reports` no reemplaza al núcleo normalizado; funciona como proyección para compatibilidad de API y exportación.
+
+Convención actual del payload serializado para calibración OCR:
+
+- `ocrTrazabilidad[]` por pregunta con:
+  - `pregunta`
+  - `ocrOriginalGuess`
+  - `ocrOriginalConfidence`
+  - `finalConfirmedAnswer`
+  - `reglasNormalizacionVersion`
 
 ## Migraciones versionadas
 

@@ -1,18 +1,46 @@
 export const letrasValidas = ['A', 'B', 'C', 'D'];
 
-const mapaCaracteresConfusos = {
-  '4': 'A',
-  '8': 'B',
-  '(': 'C',
-  '0': 'D',
-  O: 'D',
-  Q: 'D'
+export const REGLAS_NORMALIZACION_VERSION = 'ocr-map-v2';
+
+const MAPEO_SIMBOLOS_POR_VERSION = {
+  'ocr-map-v1': {
+    '4': 'A',
+    '8': 'B',
+    '(': 'C',
+    '0': 'D',
+    O: 'D',
+    Q: 'D'
+  },
+  'ocr-map-v2': {
+    '4': 'A',
+    '8': 'B',
+    '1': 'A',
+    I: 'A',
+    '|': 'A',
+    '3': 'B',
+    '(': 'C',
+    '<': 'C',
+    '©': 'C',
+    '0': 'D',
+    O: 'D',
+    Q: 'D',
+    '9': 'D'
+  }
 };
 
-export const crearRespuestaEnriquecida = (respuesta = '', confianza = null, fuenteLinea = '') => ({
+const mapaCaracteresConfusos = MAPEO_SIMBOLOS_POR_VERSION[REGLAS_NORMALIZACION_VERSION];
+
+const construirMetadataRespuesta = (metadatos = {}) => ({
+  ...(metadatos.ocrOriginalGuess ? { ocrOriginalGuess: metadatos.ocrOriginalGuess } : {}),
+  ...(typeof metadatos.ocrOriginalConfidence === 'number' ? { ocrOriginalConfidence: metadatos.ocrOriginalConfidence } : {}),
+  ...(metadatos.reglasNormalizacionVersion ? { reglasNormalizacionVersion: metadatos.reglasNormalizacionVersion } : {})
+});
+
+export const crearRespuestaEnriquecida = (respuesta = '', confianza = null, fuenteLinea = '', metadata = {}) => ({
   respuesta,
   confianza,
-  fuenteLinea
+  fuenteLinea,
+  ...construirMetadataRespuesta(metadata)
 });
 
 const normalizarCaracterRespuesta = (caracter = '') => {
@@ -47,14 +75,16 @@ export const convertirTextoALista = (texto, totalPreguntas, metadatos = {}) => {
     return letras.map((respuesta, indice) => crearRespuestaEnriquecida(
       respuesta,
       metadatos.confianza ?? null,
-      metadatos.fuenteLinea || `Manual ${indice + 1}`
+      metadatos.fuenteLinea || `Manual ${indice + 1}`,
+      construirMetadataRespuesta(metadatos)
     ));
   }
 
   return Array.from({ length: total }, (_, indice) => crearRespuestaEnriquecida(
     letras[indice] || '',
     metadatos.confianza ?? null,
-    metadatos.fuenteLinea || (letras[indice] ? `Manual ${indice + 1}` : '')
+    metadatos.fuenteLinea || (letras[indice] ? `Manual ${indice + 1}` : ''),
+    construirMetadataRespuesta(metadatos)
   ));
 };
 
@@ -123,7 +153,12 @@ export const parsearOCRPorNumeroPregunta = (textoOCR, totalPreguntas, opciones =
       ...crearRespuestaEnriquecida(
         respuesta,
         typeof linea.confidence === 'number' ? Number(linea.confidence * prioridad) : null,
-        linea.source || `Línea ${indiceLinea + 1}`
+        linea.source || `Línea ${indiceLinea + 1}`,
+        {
+          ocrOriginalGuess: String(respuesta || ''),
+          ocrOriginalConfidence: typeof linea.confidence === 'number' ? Number(linea.confidence) : null,
+          reglasNormalizacionVersion: REGLAS_NORMALIZACION_VERSION
+        }
       ),
       orden: ordenGlobal++
     };
@@ -206,7 +241,11 @@ export const parsearOCRPorNumeroPregunta = (textoOCR, totalPreguntas, opciones =
     return Array.from({ length: longitud }, (_, indice) => {
       const item = respuestasPorIndice[indice];
       if (!item) return crearRespuestaEnriquecida();
-      return crearRespuestaEnriquecida(item.respuesta, item.confianza, item.fuenteLinea);
+      return crearRespuestaEnriquecida(item.respuesta, item.confianza, item.fuenteLinea, {
+        ocrOriginalGuess: item.ocrOriginalGuess,
+        ocrOriginalConfidence: item.ocrOriginalConfidence,
+        reglasNormalizacionVersion: item.reglasNormalizacionVersion
+      });
     });
   }
 
