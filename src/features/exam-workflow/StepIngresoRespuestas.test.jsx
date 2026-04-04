@@ -36,6 +36,9 @@ const crearProps = (overrides = {}) => ({
   onAplicarFilaImportada: vi.fn(),
   onRegistrarFilasImportadas: vi.fn(),
   resumenRegistroLote: null,
+  estrategiaConflictoImportacion: 'omitir_existentes',
+  onCambiarEstrategiaConflicto: vi.fn(),
+  resumenEstrategiaImportacion: { creados: 20, actualizados: 0, omitidos: 10 },
   ...overrides
 });
 
@@ -71,5 +74,16 @@ describe('StepIngresoRespuestas', () => {
     });
 
     expect(screen.getByText('Mostrando 1 de 1 filas (filtradas de 30).')).toBeInTheDocument();
+  });
+
+  it('permite cambiar estrategia de conflicto y muestra resumen previo', () => {
+    const onCambiarEstrategiaConflicto = vi.fn();
+    render(<StepIngresoRespuestas {...crearProps({ onCambiarEstrategiaConflicto })} />);
+
+    expect(screen.getByText('Según la estrategia: Creados 20 · Actualizados 0 · Omitidos 10')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Estrategia de conflicto' }), {
+      target: { value: 'sobrescribir_por_matricula' }
+    });
+    expect(onCambiarEstrategiaConflicto).toHaveBeenCalledWith('sobrescribir_por_matricula');
   });
 });

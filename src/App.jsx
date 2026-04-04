@@ -15,6 +15,7 @@ import {
   exportarGrupoCSV,
   exportarIndividualCSV,
   exportarIndividualPDF,
+  exportarOperacionesImportacionCSV,
 } from "./services/exportService";
 import { procesarImagenOCR } from "./services/ocrService";
 import {
@@ -45,6 +46,11 @@ const pasos = [
 ];
 
 const UMBRAL_BAJA_CONFIANZA = 65;
+const ESTRATEGIAS_CONFLICTO_IMPORTACION = {
+  OMITIR_EXISTENTES: "omitir_existentes",
+  SOBRESCRIBIR_POR_MATRICULA: "sobrescribir_por_matricula",
+  CREAR_SOLO_NUEVOS: "crear_solo_nuevos",
+};
 
 const formularioInicial = {
   materia: "",
@@ -95,6 +101,8 @@ function App() {
     error: "",
   });
   const [resumenRegistroLote, setResumenRegistroLote] = useState(null);
+  const [estrategiaConflictoImportacion, setEstrategiaConflictoImportacion] =
+    useState(ESTRATEGIAS_CONFLICTO_IMPORTACION.OMITIR_EXISTENTES);
 
   const {
     pasoActual,
@@ -121,6 +129,8 @@ function App() {
     reportesFiltrados,
     reportesAgrupadosPorMateria,
     errorSesion: errorSesionReportes,
+    operacionesImportacion,
+    guardarOperacionImportacion,
   } = useReportes();
 
   useEffect(() => {
@@ -444,6 +454,9 @@ function App() {
         duplicadosEnHistorial,
         error: "",
       });
+      setEstrategiaConflictoImportacion(
+        ESTRATEGIAS_CONFLICTO_IMPORTACION.OMITIR_EXISTENTES,
+      );
     } catch (error) {
       setImportacionEstado((previo) => ({
         ...previo,
@@ -469,6 +482,9 @@ function App() {
         duplicadosEnHistorial,
         error: "",
       });
+      setEstrategiaConflictoImportacion(
+        ESTRATEGIAS_CONFLICTO_IMPORTACION.OMITIR_EXISTENTES,
+      );
     } catch (error) {
       setImportacionEstado((previo) => ({
         ...previo,
@@ -501,6 +517,7 @@ function App() {
           reporte,
         ]),
     );
+    const matriculasAfectadas = [];
 
     for (const fila of filasObjetivo) {
       const matricula = String(fila?.estudianteMatricula || "").trim();
@@ -511,23 +528,114 @@ function App() {
 
       procesadasEnLote.add(matricula);
       const previo = existentesPorMatricula.get(matricula);
+      if (
+        estrategiaConflictoImportacion ===
+          ESTRATEGIAS_CONFLICTO_IMPORTACION.CREAR_SOLO_NUEVOS &&
+        previo
+      ) {
+        continue;
+      }
+      if (
+        estrategiaConflictoImportacion ===
+          ESTRATEGIAS_CONFLICTO_IMPORTACION.OMITIR_EXISTENTES &&
+        previo
+      ) {
+        estadisticas.omitidos += 1;
+        continue;
+      }
       const reporte = generarReporteDesdeFilaImportada(fila, {
-        id: previo?.id,
+        id:
+          estrategiaConflictoImportacion ===
+          ESTRATEGIAS_CONFLICTO_IMPORTACION.SOBRESCRIBIR_POR_MATRICULA
+            ? previo?.id
+            : undefined,
         creadoEn: previo?.creadoEn,
       });
 
       try {
         await guardarReportePersistente(reporte);
         setErrorSesionUi("");
-        if (previo) estadisticas.actualizados += 1;
-        else estadisticas.creados += 1;
+        if (
+          previo &&
+          estrategiaConflictoImportacion ===
+            ESTRATEGIAS_CONFLICTO_IMPORTACION.SOBRESCRIBIR_POR_MATRICULA
+        ) {
+          estadisticas.actualizados += 1;
+        } else {
+          estadisticas.creados += 1;
+        }
+        matriculasAfectadas.push(matricula);
       } catch {
         estadisticas.fallidos += 1;
       }
     }
 
     setResumenRegistroLote(estadisticas);
+    guardarOperacionImportacion({
+      timestamp: new Date().toISOString(),
+      strategy: estrategiaConflictoImportacion,
+      affectedMatriculas: matriculasAfectadas,
+    });
   };
+
+  const resumenEstrategiaImportacion = useMemo(() => {
+    const filas = importacionEstado.filas || [];
+    const materiaNormalizada = normalizarNombreMateria(datos.materia);
+    const existentes = new Set(
+      reportes
+        .filter(
+          (reporte) =>
+            normalizarNombreMateria(reporte.examen?.materia) ===
+            materiaNormalizada,
+        )
+        .map((reporte) => String(reporte?.estudiante?.matricula || "").trim())
+        .filter(Boolean),
+    );
+
+    const unicas = Array.from(
+      new Set(
+        filas
+          .map((fila) => String(fila?.estudianteMatricula || "").trim())
+          .filter(Boolean),
+      ),
+    );
+    const existentesEnImportacion = unicas.filter((matricula) =>
+      existentes.has(matricula),
+    ).length;
+    const nuevos = unicas.length - existentesEnImportacion;
+
+    if (
+      estrategiaConflictoImportacion ===
+      ESTRATEGIAS_CONFLICTO_IMPORTACION.SOBRESCRIBIR_POR_MATRICULA
+    ) {
+      return {
+        creados: nuevos,
+        actualizados: existentesEnImportacion,
+        omitidos: 0,
+      };
+    }
+    if (
+      estrategiaConflictoImportacion ===
+      ESTRATEGIAS_CONFLICTO_IMPORTACION.CREAR_SOLO_NUEVOS
+    ) {
+      return {
+        creados: nuevos,
+        actualizados: 0,
+        omitidos: 0,
+      };
+    }
+
+    return {
+      creados: nuevos,
+      actualizados: 0,
+      omitidos: existentesEnImportacion,
+    };
+  }, [
+    datos.materia,
+    estrategiaConflictoImportacion,
+    importacionEstado.filas,
+    reportes,
+  ]);
 
   const actualizarRespuesta = (indice, valor) => {
     setRespuestasLista((previo) => {
@@ -757,6 +865,10 @@ function App() {
     exportarGrupoCSV(reportesCarpeta);
   };
 
+  const exportarOperacionesImportacion = () => {
+    exportarOperacionesImportacionCSV(operacionesImportacion);
+  };
+
   const textoManual = respuestasLimpias;
   const totalFilasTabla =
     totalPreguntasNumero > 0
@@ -814,7 +926,7 @@ function App() {
         )}
 
         {pasoActual === 1 && (
-          <StepIngresoRespuestas
+      <StepIngresoRespuestas
             datos={datos}
             errores={errores}
             actualizarDato={actualizarDato}
@@ -832,10 +944,13 @@ function App() {
             importacionEstado={importacionEstado}
             onArchivoImportacion={importarArchivoRespuestas}
             onTextoImportacion={importarTextoRespuestas}
-            onAplicarFilaImportada={aplicarFilaImportada}
-            onRegistrarFilasImportadas={registrarFilasImportadas}
-            resumenRegistroLote={resumenRegistroLote}
-          />
+        onAplicarFilaImportada={aplicarFilaImportada}
+        onRegistrarFilasImportadas={registrarFilasImportadas}
+        resumenRegistroLote={resumenRegistroLote}
+        estrategiaConflictoImportacion={estrategiaConflictoImportacion}
+        onCambiarEstrategiaConflicto={setEstrategiaConflictoImportacion}
+        resumenEstrategiaImportacion={resumenEstrategiaImportacion}
+      />
         )}
 
         {pasoActual === 2 && (
@@ -867,9 +982,11 @@ function App() {
             reportesAgrupadosPorMateria={reportesAgrupadosPorMateria}
             estadisticasGrupo={estadisticasGrupo}
             exportarGrupoCSV={() => exportarGrupoCSV(reportesFiltrados)}
-            exportarCarpetaMateriaCSV={exportarCarpetaMateriaCSV}
-            errorSesion={errorSesionUi || errorSesionReportes}
-          />
+        exportarCarpetaMateriaCSV={exportarCarpetaMateriaCSV}
+        errorSesion={errorSesionUi || errorSesionReportes}
+        operacionesImportacion={operacionesImportacion}
+        exportarOperacionesImportacion={exportarOperacionesImportacion}
+      />
         )}
       </section>
 
