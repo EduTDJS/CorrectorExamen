@@ -1,5 +1,5 @@
 import { detectarMatriculasDuplicadas } from '../hooks/useReportes';
-import { parsearArchivoImportacion, validarArchivoImportacion } from './importService';
+import { parsearArchivoImportacion, parsearTextoImportacion, validarArchivoImportacion } from './importService';
 
 const crearArchivoXlsx = (rows) => {
   const xmlEscape = (value = '') => String(value)
@@ -91,7 +91,45 @@ describe('importService', () => {
     expect(resultado.errores[0].fila).toBe(3);
   });
 
-  it('reporta error claro para XLSX corrupto', async () => {
+
+
+  it('parsea texto TSV pegado y reutiliza validaciones del esquema', async () => {
+    const texto = [
+      'estudianteNombre	estudianteMatricula	respuestas',
+      'Ana	2023001	ABCD',
+      'Carlos	2023002	ABXD',
+      'Ana Dup	2023001	DDDD'
+    ].join('\n');
+
+    const resultado = await parsearTextoImportacion({ text: texto, totalPreguntas: 4 });
+
+    expect(resultado.resumen).toMatchObject({
+      totalLeidas: 3,
+      totalValidas: 1,
+      totalErrores: 1,
+      totalDuplicados: 1
+    });
+    expect(resultado.filas[0].estudianteNombre).toBe('Ana Dup');
+    expect(resultado.errores[0].fila).toBe(3);
+  });
+
+  it('parsea texto CSV pegado', async () => {
+    const texto = [
+      'estudianteNombre,estudianteMatricula,respuestas',
+      'Luz,2023100,ABCD'
+    ].join('\n');
+
+    const resultado = await parsearTextoImportacion({ text: texto, totalPreguntas: 4 });
+
+    expect(resultado.resumen).toMatchObject({
+      totalLeidas: 1,
+      totalValidas: 1,
+      totalErrores: 0,
+      totalDuplicados: 0
+    });
+  });
+
+    it('reporta error claro para XLSX corrupto', async () => {
     const file = new File(['contenido inválido'], 'respuestas.xlsx', {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     });

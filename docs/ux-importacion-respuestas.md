@@ -25,6 +25,16 @@ Ana Pérez,2026001,ABCDAB
 Luis Díaz,2026002,ABCCDB
 ```
 
+## Plantilla y pegado rápido
+
+- La UI ofrece `Descargar plantilla` junto al selector de archivo.
+- La plantilla genera un CSV con encabezados obligatorios:
+  - `estudianteNombre`
+  - `estudianteMatricula`
+  - `respuestas`
+- También existe la acción `Pegar desde Excel/Sheets`, que abre un modal con textarea para pegar datos en formato `TSV` (tabulado) o `CSV`.
+- El texto pegado se procesa con el mismo flujo de validación que la importación por archivo (mismo esquema, deduplicación y resumen).
+
 ## Normalización de respuestas
 
 - Entrada aceptada: `A/B/C/D` (insensible a mayúsculas).
