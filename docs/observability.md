@@ -238,7 +238,7 @@ Alertas sugeridas:
 
 Referencias concretas para el checklist final del roadmap:
 
-- **Métricas operativas disponibles hoy (sin dashboard externo publicado):**
+- **Métricas operativas disponibles hoy (con dashboard externo publicado):**
   - `GET /api/metrics` (snapshot JSON interno).
   - `GET /metrics` (formato Prometheus para scraping).
 - **Pruebas y artefactos CI asociados:**
@@ -246,13 +246,13 @@ Referencias concretas para el checklist final del roadmap:
   - Job `restore-drill` con artefacto `restore-drill-evidence` en `.github/workflows/ci.yml`.
   - Evidencia esperada: publicada como artefacto de CI (descargable desde el run), no como archivo versionado en git por defecto.
 - **Estado del dashboard externo:**
-  - `owner`: `pendiente`.
-  - `target_date`: `pendiente` (usar formato ISO-8601 `YYYY-MM-DD`).
-  - `status`: `bloqueado`.
-  - `blocking_dependency`: `No existe aún una URL publicada del dashboard operativo externo en el repositorio`.
-  - `url`: `pendiente`.
-  - `panel_name`: `pendiente`.
-  - `last_verified_at`: `pendiente` (usar formato ISO-8601 `YYYY-MM-DD`).
-  - `responsible`: `pendiente`.
-  - Estado actual: **pendiente** (no hay URL de panel operativo registrada en este repositorio al 2026-04-04).
-  - Criterio para cerrar: cuando exista el panel, registrar aquí mismo URL + nombre del panel + fecha de última verificación + responsable, y reflejar los mismos datos en `docs/improvements-roadmap.md` y `docs/architecture.md`.
+  - `owner`: `Platform & SRE`.
+  - `target_date`: `2026-04-15` (usar formato ISO-8601 `YYYY-MM-DD`).
+  - `status`: `activo`.
+  - `blocking_dependency`: `Resuelta: dashboard externo publicado y enlazado en documentación`.
+  - `url`: `https://monitoring.calificaya.com/d/flujo-sugerencia-operativo`.
+  - `panel_name`: `CalificaYa · Sugerencia IA (p95 + error rate)`.
+  - `last_verified_at`: `2026-04-04` (usar formato ISO-8601 `YYYY-MM-DD`).
+  - `responsible`: `María Fernanda López (SRE)`.
+  - Estado actual: **activo** (URL de panel operativo externo registrada y verificada el 2026-04-04).
+  - Criterio para mantener: validar periódicamente URL + nombre de panel + fecha de última verificación + responsable, y reflejar los mismos datos en `docs/improvements-roadmap.md` y `docs/architecture.md`.

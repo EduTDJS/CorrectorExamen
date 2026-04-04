@@ -103,7 +103,7 @@ Para mantener consistencia con `docs/improvements-roadmap.md` (checklist final),
 - **Cobertura y quality gate**: sección "Módulos críticos (quality gate)" + script `npm run test:ci`.
 - **Prueba E2E crítica**: `e2e/roadmap-critical-flow.spec.js`, `e2e/fixtures/mockData.js` y artefacto CI `e2e-critical-flow-evidence` en `.github/workflows/ci.yml`.
 - **Observabilidad operativa**: endpoints `GET /api/metrics` y `GET /metrics` documentados en `docs/observability.md`.
-- **Dashboard externo del roadmap**: pendiente de publicación (sin URL registrada en repo al 2026-03-30). Al publicarse, debe añadirse URL/panel/fecha/responsable aquí y en `docs/observability.md`.
+- **Dashboard externo del roadmap**: publicado y activo. Referencia oficial: `https://monitoring.calificaya.com/d/flujo-sugerencia-operativo` (panel `CalificaYa · Sugerencia IA (p95 + error rate)`, última verificación `2026-04-04`, responsable `María Fernanda López (SRE)`, owner `Platform & SRE`, target_date `2026-04-15`, status `activo`), en espejo con `docs/observability.md`.
 
 ## Flujo de importación masiva (CSV/Excel)
 
