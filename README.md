@@ -177,6 +177,7 @@ Para mejorar la precisión del OCR cuando se corrige por imagen:
 - **Encuadre completo:** incluye la hoja entera en formato vertical, sin cortar márgenes ni números de pregunta.
 - **Resolución suficiente:** prefiere fotos de al menos 900x1200 píxeles para lectura estable.
 - **Evita panorámicas o recortes extremos:** el OCR funciona mejor cuando la hoja ocupa la mayor parte del encuadre.
+- **Preprocesado configurable:** `src/services/ocrService.js` aplica escala de grises, contraste y umbral local antes de Tesseract; puedes ajustar constantes de preprocesado al inicio del archivo según tipo de hoja/cámara.
 
 
 ## Cobertura de pruebas (Vitest)
